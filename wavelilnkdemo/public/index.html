@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <title>WebRTC Mesh（Listen-Only）最小版</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 12px; }
+    button { padding: 8px 12px; }
+    #logs { background:#111;color:#ddd;padding:10px;border-radius:8px;height:200px;overflow:auto;font-family:ui-monospace,monospace }
+    .badge { display:inline-block;padding:2px 8px;border-radius:999px;background:#eee;margin-left:8px }
+  </style>
+</head>
+<body>
+  <h1>WebRTC Mesh（Listen-Only）</h1>
+  <p>没有麦克风也能加入房间并<b>听到</b>其他人；若对方有麦，他们能互相通话。</p>
+
+  <label>房间ID：
+    <input id="roomId" placeholder="例如 test123" />
+  </label>
+  <button id="joinBtn">加入房间</button>
+  <button id="leaveBtn" disabled>离开</button>
+  <button id="muteBtn" disabled>静音</button>
+  <span id="mode" class="badge">未加入</span>
+
+  <h3>日志</h3>
+  <div id="logs"></div>
+  <div id="audios" hidden></div>
+
+  <script>
+    const logBox = document.getElementById('logs');
+    const modeEl = document.getElementById('mode');
+    function log(...a){ logBox.textContent += a.map(x=>typeof x==='object'?JSON.stringify(x):String(x)).join(' ')+'\n'; logBox.scrollTop = logBox.scrollHeight; console.log(...a); }
+
+    // 只用公共 STUN；无 TURN
+    const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+    const clientId = Math.random().toString(36).slice(2,10);
+    let roomId = ''; let ws=null; let localStream=null; let joined=false; let muted=false; let listenOnly=false;
+    const peers = {}; // {peerId: {pc, audio}}
+
+    function setJoinedUI(on){
+      document.getElementById('leaveBtn').disabled = !on;
+      document.getElementById('muteBtn').disabled  = !on || listenOnly; // 只听模式不能静音（无本地轨）
+      document.getElementById('joinBtn').disabled  = on;
+      modeEl.textContent = on ? (listenOnly ? '已加入：只听模式' : `已加入：可讲话`) : '未加入';
+    }
+
+    // ---- 获取本地麦克风（失败则进入只听模式） ----
+    async function ensureLocalStream(){
+      if (localStream !== null) return localStream; // null 表示已判断过没有
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+        listenOnly = false;
+        log('麦克风可用，正常模式');
+      } catch (e) {
+        // 进入只听模式
+        localStream = null;
+        listenOnly = true;
+        log('未检测到麦克风，进入 Listen-Only 模式：', e.message || e);
+      }
+      return localStream;
+    }
+
+    // ---- WebSocket 信令 ----
+    function connectWS(){
+      const url = (location.origin.replace(/^http/,'ws') + location.pathname).replace(/\/$/, '');
+      ws = new WebSocket(url);
+      ws.onopen = ()=>{
+        log('WS connected');
+        ws.send(JSON.stringify({ type:'join', roomId, clientId }));
+      };
+      ws.onmessage = async (ev)=>{
+        const msg = JSON.parse(ev.data);
+        if (msg.type==='existingPeers') {
+          log('existingPeers:', msg.peers.join(',') || '(none)');
+          for (const pid of msg.peers) await createConnectionAndOffer(pid);
+        } else if (msg.type==='peer-joined') {
+          log('peer-joined:', msg.clientId);
+          await createConnectionAndOffer(msg.clientId);
+        } else if (msg.type==='peer-left') {
+          log('peer-left:', msg.clientId);
+          destroyPeer(msg.clientId);
+        } else if (msg.type==='offer') {
+          await onOffer(msg.from, msg.sdp);
+        } else if (msg.type==='answer') {
+          await onAnswer(msg.from, msg.sdp);
+        } else if (msg.type==='candidate') {
+          await onCandidate(msg.from, msg.candidate);
+        }
+      };
+      ws.onerror = (e)=> log('WS error', e.message||e);
+      ws.onclose  = ()=> log('WS closed');
+    }
+
+    // ---- Peer 连接 ----
+    function ensurePeer(peerId){
+      if (peers[peerId]) return peers[peerId];
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+      pc.onicecandidate = (e)=>{
+        if (e.candidate) ws?.send(JSON.stringify({ type:'candidate', to:peerId, candidate:e.candidate }));
+      };
+
+      pc.ontrack = (e)=>{
+        let a = peers[peerId]?.audio;
+        if (!a) {
+          a = document.createElement('audio');
+          a.autoplay = true;
+          a.playsInline = true;
+          document.getElementById('audios').appendChild(a);
+        }
+        a.srcObject = e.streams[0];
+        peers[peerId] = { pc, audio:a };
+      };
+
+      peers[peerId] = { pc, audio: peers[peerId]?.audio };
+      return peers[peerId];
+    }
+
+    async function addLocalTracks(pc){
+      const s = await ensureLocalStream();
+      if (!s) return; // Listen-Only：不添加发送轨
+      s.getTracks().forEach(t => pc.addTrack(t, s));
+    }
+
+    async function createConnectionAndOffer(peerId){
+      const { pc } = ensurePeer(peerId);
+      await addLocalTracks(pc);
+      const offer = await pc.createOffer({ offerToReceiveAudio: true });
+      await pc.setLocalDescription(offer);
+      ws?.send(JSON.stringify({ type:'offer', to:peerId, sdp:offer }));
+      log('sent offer ->', peerId);
+    }
+
+    async function onOffer(from, sdp){
+      const { pc } = ensurePeer(from);
+      await addLocalTracks(pc);
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws?.send(JSON.stringify({ type:'answer', to:from, sdp:answer }));
+      log('answered ->', from);
+    }
+
+    async function onAnswer(from, sdp){
+      const { pc } = ensurePeer(from);
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      log('got answer from', from);
+    }
+
+    async function onCandidate(from, candidate){
+      const p = peers[from];
+      if (!p) return;
+      try { await p.pc.addIceCandidate(new RTCIceCandidate(candidate)); }
+      catch (e) { log('addIceCandidate error:', e.message||e); }
+    }
+
+    function destroyPeer(id){
+      const p = peers[id];
+      if (!p) return;
+      try { p.pc.close(); } catch {}
+      if (p.audio) p.audio.remove();
+      delete peers[id];
+    }
+
+    // ---- 按钮 ----
+    const joinBtn = document.getElementById('joinBtn');
+    const leaveBtn = document.getElementById('leaveBtn');
+    const muteBtn  = document.getElementById('muteBtn');
+
+    joinBtn.onclick = async ()=>{
+      roomId = document.getElementById('roomId').value.trim() || 'test123';
+      await ensureLocalStream();     // 不管成功与否都继续
+      connectWS();
+      joined = true; setJoinedUI(true);
+      log(`Joined room: ${roomId} as ${clientId} ${listenOnly ? '(listen-only)' : ''}`);
+    };
+
+    leaveBtn.onclick = ()=>{
+      if (!joined) return;
+      for (const id of Object.keys(peers)) {
+        ws?.send(JSON.stringify({ type:'leave', to:id }));
+        destroyPeer(id);
+      }
+      try { ws?.close(); } catch {}
+      if (localStream) { localStream.getTracks().forEach(t => t.stop()); }
+      localStream = null;
+      joined = false; setJoinedUI(false);
+      log('Left room');
+    };
+
+    muteBtn.onclick = ()=>{
+      if (!localStream || listenOnly) return;
+      muted = !muted;
+      localStream.getAudioTracks().forEach(t => t.enabled = !muted);
+      muteBtn.textContent = muted ? '取消静音' : '静音';
+    };
+  </script>
+</body>
+</html>
