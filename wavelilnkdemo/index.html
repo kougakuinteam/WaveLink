@@ -1,0 +1,338 @@
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>Wavelink 语音通话 Demo（无敌版 / Mesh）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;padding:16px;background:#0f172a;color:#e5e7eb}
+    h1{font-size:20px;margin:0 0 12px}
+    .card{background:#111827;border:1px solid #334155;border-radius:12px;padding:16px;margin-bottom:12px}
+    label{display:block;margin:8px 0 4px}
+    input,button,select{font-size:14px}
+    input,select{padding:8px;border-radius:8px;border:1px solid #475569;background:#0b1220;color:#e5e7eb;width:280px}
+    button{padding:8px 12px;border-radius:8px;border:1px solid #475569;background:#1f2937;color:#e5e7eb;margin-right:8px;cursor:pointer}
+    button[disabled]{opacity:.5;cursor:not-allowed}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .small{opacity:.7;font-size:12px}
+    .log{white-space:pre-wrap;background:#0b1220;border-radius:8px;padding:8px;border:1px solid #334155;height:180px;overflow:auto}
+    .peers{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+    .peer{border:1px dashed #334155;border-radius:10px;padding:10px}
+    audio{width:100%}
+  </style>
+</head>
+<body>
+  <h1>Wavelink 语音通话 Demo（无敌版 / 纯 Mesh）</h1>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>房间号</label>
+        <input id="roomInput" placeholder="例如: my-room-001" />
+      </div>
+      <div>
+        <label>我的昵称（可选）</label>
+        <input id="nameInput" placeholder="例如: 李哥" />
+      </div>
+      <div>
+        <label>麦克风设备（可选）</label>
+        <select id="micSelect"><option value="">默认麦克风</option></select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <button id="joinBtn">加入房间</button>
+      <button id="leaveBtn" disabled>离开房间</button>
+      <button id="muteBtn" disabled>静音</button>
+      <span class="small">加入后会尝试拿麦克风；失败就自动“只听模式”。</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row small">
+      <div>连接日志（排查故障第一站）</div>
+      <div id="selfMode" style="margin-left:auto">当前模式：未加入</div>
+    </div>
+    <div id="log" class="log"></div>
+  </div>
+
+  <div class="card">
+    <div class="row small"><div>在线成员音频</div></div>
+    <div id="peers" class="peers"></div>
+  </div>
+
+  <!-- 我自己的本地音频（默认不显示 UI） -->
+  <audio id="selfAudio" autoplay playsinline muted></audio>
+
+<script>
+/**
+ * 大白话总览：
+ * - WebSocket 只负责“传话”（谁进房、SDP、ICE）。
+ * - WebRTC 负责“打通声音”。
+ * - 为了避免双方同时打电话（glare），规定：**只有新加入的人发起 offer**。
+ * - 为了避免 ICE 候选先到、SDP 后到导致报错：**先缓存候选，等 setRemoteDescription 完成后再统一 add**。
+ * - 为了避免重复加自己麦克风：**每个 RTCPeerConnection 只 addTrack 一次**。
+ */
+
+// ===== 这里填 STUN / TURN。没有 TURN 时，跨网容易打不通；加上 TURN 基本无敌 =====
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  // 需要时把下面这段改成你的 TURN 服务器（建议自建 coturn 或购买商用服务）
+  // { urls: 'turn:your.turn.server:3478', username: 'user', credential: 'pass' },
+];
+
+const state = {
+  ws: null,
+  roomId: null,
+  clientId: null,
+  name: null,
+  localStream: null,
+  joined: false,
+  muted: false,
+  peers: new Map(), // peerId -> { pc, audioEl, box, hasRemoteAudio, pendingCandidates:[], remoteSet:false }
+};
+
+const $ = (id)=>document.getElementById(id);
+const log = (...args)=>{ console.log(...args); const el=$('log'); el.textContent += args.map(String).join(' ')+'\n'; el.scrollTop = el.scrollHeight; };
+const setModeText = (t)=>$('selfMode').textContent = '当前模式：'+t;
+
+// UI refs
+const joinBtn=$('joinBtn'), leaveBtn=$('leaveBtn'), muteBtn=$('muteBtn');
+const roomInput=$('roomInput'), nameInput=$('nameInput');
+const micSelect=$('micSelect'), peersBox=$('peers'), selfAudio=$('selfAudio');
+
+// ===== 列出可用麦克风（可选功能，方便切换输入设备） =====
+async function listMics(){
+  try{
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d=>d.kind==='audioinput');
+    micSelect.innerHTML = '<option value="">默认麦克风</option>' + mics.map(d=>`<option value="${d.deviceId}">${d.label||('麦克风 '+d.deviceId.slice(-4))}</option>`).join('');
+  }catch(e){ log('[device] 列出麦克风失败：', e.message); }
+}
+listMics();
+
+// ===== 拿麦克风；失败则进入只听模式 =====
+async function ensureLocalStream(){
+  if(state.localStream) return state.localStream;
+  // 如果用户选了特定设备，则带上 deviceId
+  const deviceId = micSelect.value || undefined;
+  const constraints = deviceId ? {audio:{deviceId:{exact:deviceId}}, video:false} : {audio:true, video:false};
+  try{
+    const s = await navigator.mediaDevices.getUserMedia(constraints);
+    state.localStream = s;
+    selfAudio.srcObject = s; // 让自己也能听见自己（muted 不会回声）
+    setModeText('正常（有麦克风）');
+    log('[local] 成功获取麦克风');
+  }catch(e){
+    state.localStream = null; // 只听模式
+    setModeText('只听模式（没麦克风权限或设备）');
+    log('[local] 获取麦克风失败，进入只听模式：', e.message);
+  }
+  return state.localStream;
+}
+
+// ===== WebSocket =====
+function wsUrl(){ return (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws'; }
+async function connectWS(){
+  if(state.ws && (state.ws.readyState===WebSocket.OPEN || state.ws.readyState===WebSocket.CONNECTING)) return;
+  state.ws = new WebSocket(wsUrl());
+  state.ws.onopen = ()=> log('[ws] 已连接');
+  state.ws.onclose = ()=>{ log('[ws] 已断开'); cleanupAll('WS 断开'); };
+  state.ws.onerror = (e)=> log('[ws] 出错：', e?.message||e);
+  state.ws.onmessage = onWSMessage;
+}
+function wsSend(obj){ try{ state.ws?.readyState===WebSocket.OPEN && state.ws.send(JSON.stringify(obj)); }catch(e){ log('[ws] 发送失败：', e.message); } }
+
+async function onWSMessage(ev){
+  let msg; try{ msg=JSON.parse(ev.data); }catch{ return; }
+  switch(msg.type){
+    case 'joined': {
+      state.clientId = msg.clientId; state.joined = true;
+      joinBtn.disabled = true; leaveBtn.disabled = false; muteBtn.disabled = false; muteBtn.textContent='静音';
+      log(`[room] 已加入房间：${state.roomId}，我的ID：${state.clientId}`);
+      // 新人：对 existingPeers 逐个发起 offer（只有新人发）
+      for(const peerId of (msg.existingPeers||[])){
+        await createPeerIfNeeded(peerId);
+        await addLocalTracksOnce(peerId);
+        await doOffer(peerId);
+      }
+      break;
+    }
+    case 'peer-joined': {
+      const peerId = msg.clientId; if(peerId===state.clientId) break;
+      log(`[room] 新人加入：${peerId}（我作为老成员只创建连接，等待对方的 offer）`);
+      await createPeerIfNeeded(peerId);
+      await addLocalTracksOnce(peerId); // 我也可能要发声，但不主动 offer
+      break;
+    }
+    case 'peer-left': {
+      const peerId = msg.clientId; log(`[room] 成员离开：${peerId}`); destroyPeer(peerId); break;
+    }
+case 'offer': {
+  const { from, sdp } = msg;
+  await createPeerIfNeeded(from);
+  await addLocalTracksOnce(from);
+  const peer = state.peers.get(from);
+
+  await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+  peer.remoteSet = true;  // ← 标记已就位
+
+  const answer = await peer.pc.createAnswer();
+  await peer.pc.setLocalDescription(answer);
+  wsSend({ type: 'answer', to: from, sdp: peer.pc.localDescription });
+
+  // 冲刷缓存的候选
+  for (const c of peer.pendingCandidates) {
+    try { await peer.pc.addIceCandidate(c); } catch (e) { log('flush cand fail:', e.message); }
+  }
+  peer.pendingCandidates = [];
+  break;
+}
+
+    case 'answer': {
+  const { from, sdp } = msg;
+  const peer = state.peers.get(from);
+  if (peer) {
+    await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    peer.remoteSet = true;
+
+    for (const c of peer.pendingCandidates) {
+      try { await peer.pc.addIceCandidate(c); } catch (e) { log('flush cand fail:', e.message); }
+    }
+    peer.pendingCandidates = [];
+  }
+  break;
+}
+
+case 'ice-candidate': {
+  const { from, candidate } = msg;
+  const peer = state.peers.get(from);
+  if (peer && candidate) {
+    if (!peer.remoteSet) {
+      // SDP 还没 set，先缓存；等 setRemoteDescription 后再 add
+      peer.pendingCandidates.push(candidate);
+      // 可选：调试看看缓存了多少
+      // log(`[cand] 暂存 from=${from} 总数=${peer.pendingCandidates.length}`);
+    } else {
+      try {
+        await peer.pc.addIceCandidate(candidate);
+      } catch (e) {
+        log('[webrtc] addIceCandidate 失败：', e.message);
+      }
+    }
+  }
+  break;
+}
+    default: break;
+  }
+}
+
+// ===== WebRTC：每个对端一个 RTCPeerConnection =====
+// ===== WebRTC：每个对端一个 RTCPeerConnection =====
+async function createPeerIfNeeded(peerId) {
+  if (state.peers.has(peerId)) return state.peers.get(peerId);
+
+  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  pc.__localTracksAdded = false; // 我是否给这个 pc 加过本地轨
+
+  // === 事件监听 ===
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate) {
+      wsSend({ type: 'ice-candidate', to: peerId, candidate: ev.candidate });
+    }
+  };
+  pc.oniceconnectionstatechange = () =>
+    log(`[webrtc] ${peerId} ice状态：`, pc.iceConnectionState);
+  pc.onconnectionstatechange = () =>
+    log(`[webrtc] ${peerId} 连接状态：`, pc.connectionState);
+  pc.ontrack = (ev) => {
+    let peer = state.peers.get(peerId);
+    if (!peer) return;
+
+    if (!peer.audioEl) {
+      const wrap = document.createElement('div');
+      wrap.className = 'peer';
+      const title = document.createElement('div');
+      title.textContent = `对端：${peerId}`;
+      title.className = 'small';
+      const audio = document.createElement('audio');
+      audio.autoplay = true;
+      audio.playsInline = true;
+      audio.muted = false;
+      audio.volume = 1.0;
+      wrap.appendChild(title);
+      wrap.appendChild(audio);
+      peersBox.appendChild(wrap);
+      peer.audioEl = audio;
+      peer.box = wrap;
+    }
+
+    peer.audioEl.srcObject = ev.streams[0];
+    peer.hasRemoteAudio = true;
+  };
+
+  // ✅ 新增的两个字段（缓存候选 & SDP 状态标记）
+  const peerObj = {
+    pc,
+    audioEl: null,
+    box: null,
+    hasRemoteAudio: false,
+    pendingCandidates: [], // ← 缓存候选
+    remoteSet: false, // ← SDP 是否 set 完
+  };
+
+  state.peers.set(peerId, peerObj);
+  return peerObj;
+}
+
+async function addLocalTracksOnce(peerId){
+  const peer = state.peers.get(peerId); if(!peer) return;
+  if(!state.localStream) return; // 只听模式：不发本地轨
+  if(peer.pc.__localTracksAdded) return; // 同一个 pc 只加一次！
+  state.localStream.getTracks().forEach(t=>peer.pc.addTrack(t, state.localStream));
+  peer.pc.__localTracksAdded = true;
+}
+
+async function doOffer(peerId){
+  const peer = state.peers.get(peerId); if(!peer) return;
+  const offer = await peer.pc.createOffer({offerToReceiveAudio:true});
+  await peer.pc.setLocalDescription(offer);
+  wsSend({type:'offer', to: peerId, sdp: peer.pc.localDescription});
+}
+
+function destroyPeer(peerId){
+  const peer = state.peers.get(peerId); if(!peer) return;
+  try{ peer.pc.getSenders().forEach(s=>{ try{ s.track && s.track.stop(); }catch{} }); }catch{}
+  try{ peer.pc.close(); }catch{}
+  if(peer.box) peer.box.remove();
+  state.peers.delete(peerId);
+}
+
+function cleanupAll(reason=''){ // 一键大扫除
+  log('[cleanup] 清理所有连接：', reason);
+  for(const id of Array.from(state.peers.keys())) destroyPeer(id);
+  if(state.ws){ try{ state.ws.close(); }catch{} }
+  state.ws=null; state.joined=false;
+  joinBtn.disabled=false; leaveBtn.disabled=true; muteBtn.disabled=true; muteBtn.textContent='静音';
+  setModeText('未加入');
+  if(state.localStream){ state.localStream.getTracks().forEach(t=>t.stop()); state.localStream=null; selfAudio.srcObject=null; }
+}
+
+// ===== 入口按钮 =====
+joinBtn.onclick = async ()=>{
+  const room = roomInput.value.trim(); if(!room){ alert('请先填房间号'); return; }
+  state.roomId = room; state.name = nameInput.value.trim()||null;
+  await ensureLocalStream(); // 失败也继续（只听模式）
+  await connectWS();
+  wsSend({type:'join', roomId: state.roomId, name: state.name});
+};
+
+leaveBtn.onclick = ()=>{ if(state.ws && state.ws.readyState===WebSocket.OPEN){ wsSend({type:'leave'}); } cleanupAll('手动离开'); };
+
+muteBtn.onclick = ()=>{
+  if(!state.localStream){ alert('只听模式下没有可静音的麦克风~'); return; }
+  state.muted = !state.muted; state.localStream.getAudioTracks().forEach(t=>t.enabled=!state.muted);
+  muteBtn.textContent = state.muted ? '取消静音' : '静音';
+};
+</script>
+</body>
+</html>
