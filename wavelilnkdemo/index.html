@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>Wavelink 语音通话 Demo（Mesh 版）</title>
+  <title>Wavelink 语音通话 Demo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;padding:16px;background:#0f172a;color:#e5e7eb}
@@ -22,8 +22,7 @@
   </style>
 </head>
 <body>
-  <h1>Wavelink 语音通话 Demo（Mesh）</h1>
-
+  <h1>Wavelink 语音通话 Demo</h1>
   <div class="card">
     <div class="row">
       <div>
@@ -39,7 +38,6 @@
         <select id="micSelect"><option value="">默认麦克风</option></select>
       </div>
     </div>
-
     <div class="row" style="margin-top:8px">
       <button id="joinBtn">加入房间</button>
       <button id="leaveBtn" disabled>离开房间</button>
@@ -47,7 +45,6 @@
       <span class="small">加入后会尝试拿麦；失败就自动“只听模式”。</span>
     </div>
   </div>
-
   <div class="card">
     <div class="row small">
       <div>连接日志（排查故障第一站）</div>
@@ -55,366 +52,254 @@
     </div>
     <div id="log" class="log"></div>
   </div>
-
   <div class="card">
     <div class="row small"><div>在线成员音频</div></div>
     <div id="peers" class="peers"></div>
   </div>
-
-  <!-- 自己的本地音频（默认不显示 UI；静音以避免自我回放） -->
   <audio id="selfAudio" autoplay playsinline muted></audio>
 
 <script>
-/**
- * 关键点：
- * - 新加入的人发起 offer（避免 glare）
- * - ICE 候选先缓存，等 setRemoteDescription 完成后再 add
- * - 每个 RTCPeerConnection 只 addTrack 一次
- * - 无麦克风时显式添加 recvonly 音频收流
- * - WS 断线自动重连 + 发送队列
- */
+// ===== FINAL VERSION CONFIGURATION =====
+const ICE_SERVERS = [
+  { urls: "stun:openrelay.metered.ca:80" },
+  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }
+];
 
-// ===== ICE (含 TURN) =====
-// 验证阶段先强制 TURN；确认 OK 后可把 iceTransportPolicy 改回 'all'
- const ICE_SERVERS = [
-      { urls: 'stun:163.44.97.117:3478' },
-      { urls: 'turn:163.44.97.117:3478?transport=udp', username: 'demo', credential: 'demo12345' },
-      { urls: 'turn:163.44.97.117:3478?transport=tcp', username: 'demo', credential: 'demo12345' }
-    ];
-// ===== WebSocket 地址（自动匹配 ws/wss + 当前 host）=====
-function wsUrl(){
+// ===== DOM & STATE =====
+const $ = (id) => document.getElementById(id);
+const log = (...args) => {
+  console.log(...args);
+  const el = $("log");
+  if (!el) return;
+  const line = args.map(a => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+  el.textContent += line + "\n";
+  el.scrollTop = el.scrollHeight;
+};
+const state = {
+  ws: null, roomId: null, clientId: null, name: null,
+  localStream: null, joined: false, muted: false,
+  peers: new Map(),
+};
+const wsQueue = [];
+
+// ===== UI REFS =====
+const joinBtn = $("joinBtn");
+const leaveBtn = $("leaveBtn");
+const muteBtn = $("muteBtn");
+const roomInput = $("roomInput");
+const nameInput = $("nameInput");
+const micSelect = $("micSelect");
+const peersBox = $("peers");
+const selfAudio = $("selfAudio");
+
+// ===== CORE LOGIC =====
+function wsUrl() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${proto}://${location.host}/ws`;
 }
 
-// ===== 状态 =====
-const state = {
-  ws: null,
-  roomId: null,
-  clientId: null,
-  name: null,
-  localStream: null,
-  joined: false,
-  muted: false,
-  peers: new Map(), // peerId -> { pc, audioEl, box, hasRemoteAudio, pendingCandidates:[], remoteSet:false, __localTracksAdded:false }
-};
-
-// 发送队列（WS 未连接时先入队；onopen 后 flush）
-const wsQueue = [];
-
-// ===== 小工具 =====
-const $ = (id)=>document.getElementById(id);
-const log = (...args)=>{
+async function ensureLocalStream() {
+  if (state.localStream) return;
   try {
-    console.log(...args);
-    const el = $('log');
-    if (!el) return;
-    const line = args.map(a => {
-      if (typeof a === 'string') return a;
-      try { return JSON.stringify(a); } catch { return String(a); }
-    }).join(' ');
-    el.textContent += line + '\n';
-    el.scrollTop = el.scrollHeight;
-  } catch {}
-};
-const setModeText = (t)=>{
-  const el = $('selfMode');
-  if (el) el.textContent = '当前模式：' + t;
-};
-
-// ===== UI refs =====
-const joinBtn   = $('joinBtn');
-const leaveBtn  = $('leaveBtn');
-const muteBtn   = $('muteBtn');
-const roomInput = $('roomInput');
-const nameInput = $('nameInput');
-const micSelect = $('micSelect');
-const peersBox  = $('peers');
-const selfAudio = $('selfAudio');
-
-// ===== 列出可用麦克风 =====
-async function listMics(){
-  try{
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const mics = devices.filter(d=>d.kind==='audioinput');
-    micSelect.innerHTML =
-      '<option value="">默认麦克风</option>' +
-      mics.map(d=>`<option value="${d.deviceId}">${d.label || ('麦克风 ' + (d.deviceId||'').slice(-4))}</option>`).join('');
-  }catch(e){ log('[device] 列出麦克风失败：', e.message); }
-}
-listMics();
-
-// ===== 拿麦；失败则进入只听模式（带降噪/回声消除）=====
-async function ensureLocalStream(){
-  if(state.localStream) return state.localStream;
-  const deviceId = micSelect.value || undefined;
-  const audioOpts = deviceId
-    ? { deviceId:{exact:deviceId}, echoCancellation:true, noiseSuppression:true, autoGainControl:true }
-    : { echoCancellation:true, noiseSuppression:true, autoGainControl:true };
-  const constraints = { audio: audioOpts, video:false };
-
-  try{
-    const s = await navigator.mediaDevices.getUserMedia(constraints);
-    state.localStream = s;
-    selfAudio.srcObject = s;
-    setModeText('正常（有麦克风）');
+    const deviceId = micSelect.value || undefined;
+    const audioOpts = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    if (deviceId) audioOpts.deviceId = { exact: deviceId };
+    
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioOpts, video: false });
+    state.localStream = stream;
+    selfAudio.srcObject = stream;
+    $("selfMode").textContent = '当前模式：正常（有麦克风）';
     log('[local] 成功获取麦克风');
-  }catch(e){
+  } catch (e) {
     state.localStream = null;
-    setModeText('只听模式（没麦克风权限或设备）');
+    $("selfMode").textContent = '当前模式：只听模式（没麦克风权限或设备）';
     log('[local] 获取麦克风失败，进入只听模式：', e.message);
   }
-  return state.localStream;
-}
-
-// ===== WebSocket =====
-function flushQueue() {
-  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-  while (wsQueue.length) {
-    const data = wsQueue.shift();
-    state.ws.send(data);
-  }
-}
-function wsSend(obj){
-  try{
-    const data = typeof obj === 'string' ? obj : JSON.stringify(obj);
-    if (state.ws?.readyState === WebSocket.OPEN) {
-      state.ws.send(data);
-    } else {
-      wsQueue.push(data);
-      log('[ws] 排队发送：', obj);
-    }
-  }catch(e){ log('[ws] 发送失败：', e.message); }
 }
 
 function connectWS() {
   if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) return;
-
   const url = wsUrl();
   log('[ws] 准备连接：', url);
   state.ws = new WebSocket(url);
 
   state.ws.onopen = () => {
     log('[ws] 已连接');
-    flushQueue();
+    while (wsQueue.length) state.ws.send(wsQueue.shift());
     if (state.roomId && !state.joined) {
       wsSend({ type: 'join', roomId: state.roomId, name: state.name });
     }
   };
-  state.ws.onclose = () => {
-    log('[ws] 已断开，1s后尝试重连');
-    setTimeout(connectWS, 1000);
-    cleanupAll('WS 断开');
-  };
-  state.ws.onerror = (e) => log('[ws] 出错：', e?.message || e);
+  state.ws.onclose = () => { log('[ws] 已断开，1s后尝试重连'); setTimeout(connectWS, 1000); cleanupAll('WS 断开'); };
+  state.ws.onerror = (e) => log('[ws] 出错：', e);
   state.ws.onmessage = onWSMessage;
 }
 
-async function onWSMessage(ev){
-  let msg; try{ msg=JSON.parse(ev.data); }catch{ return; }
-  switch(msg.type){
-    case 'joined': {
-      state.clientId = msg.clientId; state.joined = true;
-      joinBtn.disabled = true; leaveBtn.disabled = false; muteBtn.disabled = false; muteBtn.textContent='静音';
-      log(`[room] 已加入房间：${state.roomId}，我的ID：${state.clientId}`);
-      for(const peerId of (msg.existingPeers||[])){
-        await createPeerIfNeeded(peerId);
-        await addLocalTracksOnce(peerId);
-        await doOffer(peerId);
-      }
-      break;
-    }
-    case 'peer-joined': {
-      const peerId = msg.clientId; if(peerId===state.clientId) break;
-      log(`[room] 新人加入：${peerId}（我作为老成员只创建连接，等待对方的 offer）`);
-      await createPeerIfNeeded(peerId);
-      await addLocalTracksOnce(peerId);
-      break;
-    }
-    case 'peer-left': {
-      const peerId = msg.clientId; log(`[room] 成员离开：${peerId}`); destroyPeer(peerId); break;
-    }
-    case 'offer': {
-      const { from, sdp } = msg;
-      await createPeerIfNeeded(from);
-      await addLocalTracksOnce(from);
-      const peer = state.peers.get(from);
-      await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      peer.remoteSet = true;
-      const answer = await peer.pc.createAnswer();
-      await peer.pc.setLocalDescription(answer);
-      wsSend({ type:'answer', to: from, sdp: peer.pc.localDescription });
-      for (const c of peer.pendingCandidates) {
-        try { await peer.pc.addIceCandidate(c); } catch (e) { log('flush cand fail:', e.message); }
-      }
-      peer.pendingCandidates = [];
-      break;
-    }
-    case 'answer': {
-      const { from, sdp } = msg;
-      const peer = state.peers.get(from);
-      if (peer) {
-        await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-        peer.remoteSet = true;
-        for (const c of peer.pendingCandidates) {
-          try { await peer.pc.addIceCandidate(c); } catch (e) { log('flush cand fail:', e.message); }
-        }
-        peer.pendingCandidates = [];
-      }
-      break;
-    }
-    case 'ice-candidate': {
-      const { from, candidate } = msg;
-      const peer = state.peers.get(from);
-      if (peer && candidate) {
-        if (!peer.remoteSet) {
-          peer.pendingCandidates.push(candidate);
-        } else {
-          try { await peer.pc.addIceCandidate(candidate); } catch (e) { log('[webrtc] addIceCandidate 失败：', e.message); }
-        }
-      }
-      break;
-    }
-    default: break;
+function wsSend(obj) {
+  const data = JSON.stringify(obj);
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(data);
+  } else {
+    wsQueue.push(data);
+    log('[ws] 排队发送：', obj);
   }
 }
 
-// ===== WebRTC：每个对端一个 RTCPeerConnection =====
-async function createPeerIfNeeded(peerId) {
-  if (state.peers.has(peerId)) return state.peers.get(peerId);
+async function onWSMessage(ev) {
+  let msg;
+  try { msg = JSON.parse(ev.data); } catch { return; }
 
-  console.log('ICE_SERVERS =', ICE_SERVERS);
+  switch (msg.type) {
+    case 'joined':
+      state.clientId = msg.clientId;
+      state.joined = true;
+      joinBtn.disabled = true; leaveBtn.disabled = false; muteBtn.disabled = false; muteBtn.textContent = '静音';
+      log(`[room] 已加入房间：${state.roomId}，我的ID：${state.clientId}`);
+      for (const peerId of (msg.peers || [])) {
+        await createPeer(peerId, true); // I am the new one, I will make offers
+      }
+      break;
+    case 'peer-joined':
+      if (msg.clientId === state.clientId) break;
+      log(`[room] 新人加入：${msg.clientId}（我作为老成员只创建连接，等待对方的 offer）`);
+      await createPeer(msg.clientId, false); // I am the old one, I wait for offer
+      break;
+    case 'peer-left':
+      log(`[room] 成员离开：${msg.clientId}`);
+      destroyPeer(msg.clientId);
+      break;
+    case 'offer':
+      await handleOffer(msg.from, msg.sdp);
+      break;
+    case 'answer':
+      await handleAnswer(msg.from, msg.sdp);
+      break;
+    case 'ice-candidate':
+      await handleIceCandidate(msg.from, msg.candidate);
+      break;
+  }
+}
 
+async function createPeer(peerId, amIOfferer) {
+  if (state.peers.has(peerId)) return;
+  
   const pc = new RTCPeerConnection({
     iceServers: ICE_SERVERS,
-    iceTransportPolicy: 'relay' // 验证阶段强制走 TURN
+    iceTransportPolicy: 'all' // Use 'all' for flexibility
   });
-  pc.__localTracksAdded = false;
-  console.log('[CFG]', pc.getConfiguration());
+  state.peers.set(peerId, { pc, audioEl: null, box: null });
 
-  // 调试：打印产生的候选（解析出 typ）
-  pc.addEventListener('icecandidate', (e) => {
-    if (!e.candidate) return;
-    const line = e.candidate.candidate || '';
-    const m = / typ (\w+)/.exec(line);
-    const typ = m ? m[1] : (e.candidate.type || 'unknown');
-    console.log('[ICE] candidate =>', { peerId, typ, line });
-    wsSend({ type:'ice-candidate', to: peerId, candidate: e.candidate });
-  });
-
-  pc.addEventListener('iceconnectionstatechange', () => {
-    log(`[webrtc] ${peerId} ice状态：`, pc.iceConnectionState);
-  });
-
-  pc.addEventListener('connectionstatechange', async () => {
-    log(`[webrtc] ${peerId} 连接状态：`, pc.connectionState);
-    try {
-      const stats = await pc.getStats(null);
-      stats.forEach((r) => {
-        if (r.type === 'transport' && r.selectedCandidatePairId) {
-          const pair = stats.get(r.selectedCandidatePairId);
-          const local = stats.get(pair.localCandidateId);
-          const remote = stats.get(pair.remoteCandidateId);
-          console.log('[PAIR] selected =>',
-            { peerId, localType: local?.candidateType, remoteType: remote?.candidateType,
-              local, remote, pair });
-        }
-      });
-    } catch {}
-  });
-
-  // 只听模式显式收流，提升兼容性
-  if (!state.localStream) {
-    try { pc.addTransceiver('audio', { direction:'recvonly' }); } catch {}
-  }
+  pc.onicecandidate = (e) => {
+    if (e.candidate) wsSend({ type: 'ice-candidate', to: peerId, candidate: e.candidate });
+  };
+  pc.oniceconnectionstatechange = () => log(`[webrtc] ${peerId} ice状态：`, pc.iceConnectionState);
+  pc.onconnectionstatechange = () => log(`[webrtc] ${peerId} 连接状态：`, pc.connectionState);
 
   pc.ontrack = (ev) => {
-    let peer = state.peers.get(peerId);
+    const peer = state.peers.get(peerId);
     if (!peer) return;
     if (!peer.audioEl) {
       const wrap = document.createElement('div');
       wrap.className = 'peer';
-      const title = document.createElement('div');
-      title.textContent = `对端：${peerId}`;
-      title.className = 'small';
+      wrap.innerHTML = `<div class="small">对端：${peerId}</div>`;
       const audio = document.createElement('audio');
-      audio.autoplay = true; audio.playsInline = true; audio.muted = false; audio.volume = 1.0;
-      wrap.appendChild(title); wrap.appendChild(audio); peersBox.appendChild(wrap);
-      peer.audioEl = audio; peer.box = wrap;
+      audio.autoplay = true; audio.playsInline = true;
+      wrap.appendChild(audio);
+      peersBox.appendChild(wrap);
+      peer.audioEl = audio;
+      peer.box = wrap;
     }
     peer.audioEl.srcObject = ev.streams[0];
-    const p = peer.audioEl.play();
-    if (p && p.catch) p.catch(err => console.warn('remote audio play() blocked:', err));
-    peer.hasRemoteAudio = true;
   };
 
-  const peerObj = { pc, audioEl:null, box:null, hasRemoteAudio:false, pendingCandidates:[], remoteSet:false, __localTracksAdded:false };
-  state.peers.set(peerId, peerObj);
-  return peerObj;
-}
+  if (state.localStream) {
+    state.localStream.getTracks().forEach(track => pc.addTrack(track, state.localStream));
+  } else {
+    // Listen-only mode: still need to receive audio
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+  }
 
-async function addLocalTracksOnce(peerId){
-  const peer = state.peers.get(peerId); if(!peer) return;
-  if(!state.localStream) return;
-  if(peer.__localTracksAdded) return;
-  state.localStream.getTracks().forEach(t=>peer.pc.addTrack(t, state.localStream));
-  peer.__localTracksAdded = true;
-}
-
-async function doOffer(peerId){
-  const peer = state.peers.get(peerId); if(!peer) return;
-  const offer = await peer.pc.createOffer();
-  await peer.pc.setLocalDescription(offer);
-  wsSend({ type:'offer', to: peerId, sdp: peer.pc.localDescription });
-}
-
-function destroyPeer(peerId){
-  const peer = state.peers.get(peerId); if(!peer) return;
-  // ❗不要 stop 本地麦克风轨道；否则多 Peer 场景会把自己的麦给关掉
-  try{ peer.pc.getSenders().forEach(s=>{ /* 仅关闭发送器，不停止本地轨道 */ }); }catch{}
-  try{ peer.pc.close(); }catch{}
-  if(peer.box) peer.box.remove();
-  state.peers.delete(peerId);
-}
-
-function cleanupAll(reason=''){
-  log('[cleanup] 清理所有连接：', reason);
-  for(const id of Array.from(state.peers.keys())) destroyPeer(id);
-  state.joined=false;
-  joinBtn.disabled=false; leaveBtn.disabled=true; muteBtn.disabled=true; muteBtn.textContent='静音';
-  setModeText('未加入');
-  if(state.localStream){
-    state.localStream.getTracks().forEach(t=>t.stop());
-    state.localStream=null; selfAudio.srcObject=null;
+  if (amIOfferer) {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    wsSend({ type: 'offer', to: peerId, sdp: pc.localDescription });
   }
 }
 
-// ===== 入口按钮 =====
-joinBtn.onclick = async ()=>{
-  const room = roomInput.value.trim(); if(!room){ alert('请先填房间号'); return; }
-  state.roomId = room;
-  state.name   = nameInput.value.trim() || null;
+async function handleOffer(from, sdp) {
+  const peer = state.peers.get(from);
+  if (!peer) return;
+  await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+  const answer = await peer.pc.createAnswer();
+  await peer.pc.setLocalDescription(answer);
+  wsSend({ type: 'answer', to: from, sdp: peer.pc.localDescription });
+}
 
-  await ensureLocalStream();   // 失败也继续（只听模式）
-  connectWS();                 // 建立/复用 WS
-  wsSend({                     // 首条 join 进队列；连接成功后自动发出
-    type:'join',
-    roomId: state.roomId,
-    name:   state.name
-  });
+async function handleAnswer(from, sdp) {
+  const peer = state.peers.get(from);
+  if (peer) await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+}
+
+async function handleIceCandidate(from, candidate) {
+  const peer = state.peers.get(from);
+  if (peer && candidate) {
+    try {
+      await peer.pc.addIceCandidate(candidate);
+    } catch (e) {
+      log('[webrtc] addIceCandidate 失败：', e.message);
+    }
+  }
+}
+
+function destroyPeer(peerId) {
+  const peer = state.peers.get(peerId);
+  if (!peer) return;
+  try { peer.pc.close(); } catch {}
+  if (peer.box) peer.box.remove();
+  state.peers.delete(peerId);
+}
+
+function cleanupAll(reason = '') {
+  log('[cleanup] 清理所有连接：', reason);
+  for (const id of state.peers.keys()) destroyPeer(id);
+  state.joined = false;
+  joinBtn.disabled = false; leaveBtn.disabled = true; muteBtn.disabled = true;
+  $("selfMode").textContent = '未加入';
+  if (state.localStream) {
+    state.localStream.getTracks().forEach(t => t.stop());
+    state.localStream = null;
+    selfAudio.srcObject = null;
+  }
+}
+
+// ===== UI BINDINGS =====
+joinBtn.onclick = async () => {
+  state.roomId = roomInput.value.trim();
+  state.name = nameInput.value.trim() || null;
+  if (!state.roomId) { alert('请先填房间号'); return; }
+  
+  await ensureLocalStream();
+  connectWS();
 };
 
-leaveBtn.onclick = ()=>{
-  wsSend({type:'leave'});
+leaveBtn.onclick = () => {
+  wsSend({ type: 'leave' });
   cleanupAll('手动离开');
+  if (state.ws) state.ws.close();
 };
 
-muteBtn.onclick = ()=>{
-  if(!state.localStream){ alert('只听模式下没有可静音的麦克风~'); return; }
+muteBtn.onclick = () => {
+  if (!state.localStream) return;
   state.muted = !state.muted;
-  state.localStream.getAudioTracks().forEach(t=>t.enabled=!state.muted);
+  state.localStream.getAudioTracks()[0].enabled = !state.muted;
   muteBtn.textContent = state.muted ? '取消静音' : '静音';
 };
+
+(async function init() {
+  await listMics();
+})();
+
 </script>
 </body>
 </html>
