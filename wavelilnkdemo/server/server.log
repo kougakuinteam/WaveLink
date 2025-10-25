@@ -1,0 +1,57 @@
+nohup: ignoring input
+Server script starting...
+Reading SSL certificate files...
+SSL certificate files read successfully.
+----------------------------------------------------------
+✅ Server is ready and listening on https://0.0.0.0:3001
+----------------------------------------------------------
+UPGRADE: Received upgrade request for /ws
+CONNECTION: New client connected from 133.106.142.147
+MESSAGE: Received raw message: {"type":"join","roomId":"123","name":"12"}
+JOIN: Client o0o4hmml (12) joined room 123.
+BROADCAST: Broadcasting 'peer-joined' to room 123 (size: 1). Except for o0o4hmml.
+--> BROADCAST LOOP: Checking client o0o4hmml.
+--> BROADCAST LOOP: Skipping o0o4hmml (it is the sender).
+BROADCAST: Broadcast for room 123 finished.
+JOIN: Finished processing 'join' message for o0o4hmml.
+MESSAGE: Received raw message: {"type":"join","roomId":"123","name":"12"}
+JOIN: Client rawmpkgm (12) joined room 123.
+BROADCAST: Broadcasting 'peer-joined' to room 123 (size: 2). Except for rawmpkgm.
+--> BROADCAST LOOP: Checking client o0o4hmml.
+--> BROADCAST LOOP: Sending to o0o4hmml...
+--> BROADCAST LOOP: Sent successfully to o0o4hmml.
+--> BROADCAST LOOP: Checking client rawmpkgm.
+--> BROADCAST LOOP: Skipping rawmpkgm (it is the sender).
+BROADCAST: Broadcast for room 123 finished.
+JOIN: Finished processing 'join' message for rawmpkgm.
+UPGRADE: Received upgrade request for /ws
+CONNECTION: New client connected from 133.106.142.11
+MESSAGE: Received raw message: {"type":"join","roomId":"123","name":"32"}
+JOIN: Client 44m6xfrx (32) joined room 123.
+BROADCAST: Broadcasting 'peer-joined' to room 123 (size: 3). Except for 44m6xfrx.
+--> BROADCAST LOOP: Checking client o0o4hmml.
+--> BROADCAST LOOP: Sending to o0o4hmml...
+--> BROADCAST LOOP: Sent successfully to o0o4hmml.
+--> BROADCAST LOOP: Checking client rawmpkgm.
+--> BROADCAST LOOP: Sending to rawmpkgm...
+--> BROADCAST LOOP: Sent successfully to rawmpkgm.
+--> BROADCAST LOOP: Checking client 44m6xfrx.
+--> BROADCAST LOOP: Skipping 44m6xfrx (it is the sender).
+BROADCAST: Broadcast for room 123 finished.
+JOIN: Finished processing 'join' message for 44m6xfrx.
+MESSAGE: Received raw message: {"type":"join","roomId":"123","name":"32"}
+JOIN: Client sfiqbpny (32) joined room 123.
+BROADCAST: Broadcasting 'peer-joined' to room 123 (size: 4). Except for sfiqbpny.
+--> BROADCAST LOOP: Checking client o0o4hmml.
+--> BROADCAST LOOP: Sending to o0o4hmml...
+--> BROADCAST LOOP: Sent successfully to o0o4hmml.
+--> BROADCAST LOOP: Checking client rawmpkgm.
+--> BROADCAST LOOP: Sending to rawmpkgm...
+--> BROADCAST LOOP: Sent successfully to rawmpkgm.
+--> BROADCAST LOOP: Checking client 44m6xfrx.
+--> BROADCAST LOOP: Sending to 44m6xfrx...
+--> BROADCAST LOOP: Sent successfully to 44m6xfrx.
+--> BROADCAST LOOP: Checking client sfiqbpny.
+--> BROADCAST LOOP: Skipping sfiqbpny (it is the sender).
+BROADCAST: Broadcast for room 123 finished.
+JOIN: Finished processing 'join' message for sfiqbpny.
