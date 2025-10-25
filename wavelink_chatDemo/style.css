@@ -1,0 +1,97 @@
+/* ...new file... */
+/* 洗練されたチャット用スタイル（中央揃え・レスポンシブ） */
+:root{
+  --bg:#f5f7fb;
+  --card:#ffffff;
+  --muted:#6b7280;
+  --accent:#2563eb;
+  --me-bg:#dcfce7;
+  --other-bg:#eef2ff;
+  --radius:12px;
+  --container-w:920px;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;padding:0;font-family:Inter, "Helvetica Neue", Arial, sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{
+  background:linear-gradient(180deg,#eef6ff 0%,var(--bg) 100%);
+  display:flex;align-items:center;justify-content:center;padding:28px;
+}
+
+/* メインコンテナ */
+.container{
+  width:100%;
+  max-width:var(--container-w);
+  min-width:320px;
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+  margin:0 auto;
+}
+
+/* カード共通 */
+.card{
+  background:var(--card);
+  border-radius:var(--radius);
+  box-shadow:0 8px 30px rgba(15,23,42,0.06);
+  overflow:hidden;
+}
+
+/* ログイン画面 */
+#login-view{
+  padding:28px;
+}
+#login-view h2{margin:0 0 12px 0;text-align:center;color:#0f172a;font-size:20px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;margin-bottom:6px;font-weight:600;color:#374151;font-size:14px}
+.form-group input{
+  width:100%;padding:12px;border-radius:10px;border:1px solid #e6edf3;background:#fbfdff;font-size:15px;color:#0f172a;
+}
+
+/* ボタン */
+button{
+  appearance:none;border:0;cursor:pointer;font-family:inherit;
+}
+#join-button{
+  width:100%;padding:12px;border-radius:10px;background:linear-gradient(90deg,var(--accent),#1e40af);color:#fff;font-weight:700;font-size:15px;box-shadow:0 8px 20px rgba(37,99,235,0.14);
+}
+
+/* チャットビュー */
+#chat-view{display:none;flex-direction:column;min-height:520px;height:70vh}
+#chat-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eef2f6;background:linear-gradient(180deg,#fff,#fbfdff)}
+#chat-header h3{margin:0;font-size:16px;color:#0f172a}
+#chat-header .meta{color:var(--muted);font-size:13px}
+
+/* チャットボックス */
+#chat-box{
+  flex:1;padding:18px;overflow:auto;background:linear-gradient(180deg,#ffffff00,#ffffff03);
+  display:flex;flex-direction:column;gap:12px;
+}
+
+/* メッセージ */
+.msg{display:flex;align-items:flex-end;gap:10px;max-width:85%;word-break:break-word}
+.msg .bubble{padding:10px 14px;border-radius:12px;font-size:14px;line-height:1.3;color:#0f172a;box-shadow:0 6px 18px rgba(2,6,23,0.04)}
+.msg .meta{font-size:11px;color:var(--muted);margin-top:6px}
+
+/* 自分と他人のレイアウト */
+.msg.from-me{align-self:flex-end;flex-direction:row-reverse}
+.msg.from-me .bubble{background:var(--me-bg);color:#064e3b;border-radius:12px 12px 6px 12px}
+.msg.other{align-self:flex-start}
+.msg.other .bubble{background:var(--other-bg);color:#0f172a;border-radius:12px 12px 12px 6px}
+
+/* アバター */
+.msg .avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#2563eb;background:linear-gradient(135deg,#eef2ff,#e6f0ff);font-size:14px}
+
+/* 入力エリア */
+#input-area{display:flex;padding:12px;border-top:1px solid #eef2f6;background:#fbfdff;align-items:center}
+#message-input{flex:1;padding:10px 14px;border-radius:999px;border:1px solid #e7eef8;background:#fff;font-size:15px}
+#send-button{margin-left:10px;padding:10px 16px;border-radius:999px;background:var(--accent);color:#fff;font-weight:700;border:0}
+
+/* 小さい画面対応 */
+@media (max-width:640px){
+  body{padding:16px}
+  .container{gap:12px}
+  #chat-view{height:78vh;min-height:480px}
+  #chat-box{padding:12px}
+  #login-view{padding:18px}
+}
