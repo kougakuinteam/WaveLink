@@ -171,10 +171,10 @@
             <div class="bg-white px-6 py-4 shadow-sm flex justify-between items-center z-10">
                 <div class="flex items-center gap-3" onclick="navigateTo('page-profile')">
                     <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" class="w-10 h-10 rounded-full bg-blue-100 border border-blue-200 cursor-pointer" alt="User Icon">
-                    <div>
+                    <!-- <div>
                         <p class="text-xs text-slate-400">こんにちは</p>
                         <p class="font-bold text-slate-700 leading-none">Felix さん</p>
-                    </div>
+                    </div> -->
                 </div>
                 <button onclick="navigateTo('page-profile')" class="text-slate-400 hover:text-blue-500 transition-colors">
                     <i class="fa-solid fa-gear text-xl"></i>
@@ -228,7 +228,7 @@
                             <div class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500">
                                 <i class="fa-solid fa-hashtag"></i>
                             </div>
-                            <div class="flex-1">
+                            <!-- <div class="flex-1">
                                 <p class="font-bold text-sm text-slate-700">開発チーム</p>
                                 <p class="text-xs text-slate-400 truncate">次のミーティングは15時です</p>
                             </div>
@@ -242,7 +242,7 @@
                                 <p class="font-bold text-sm text-slate-700">ランチ会</p>
                                 <p class="text-xs text-slate-400 truncate">どこ行きますか？</p>
                             </div>
-                            <span class="text-[10px] text-slate-300">昨日</span>
+                            <span class="text-[10px] text-slate-300">昨日</span> -->
                         </div>
                     </div>
                 </div>
@@ -263,11 +263,11 @@
                     <i class="fa-solid fa-hashtag"></i>
                 </div>
                 <div class="flex-1">
-                    <h3 class="font-bold text-slate-800 text-sm">開発チーム</h3>
+                    <!-- <h3 class="font-bold text-slate-800 text-sm">開発チーム</h3>
                     <div class="flex items-center gap-1">
                         <span class="w-2 h-2 bg-green-500 rounded-full"></span>
                         <span class="text-xs text-slate-400">3人がオンライン</span>
-                    </div>
+                    </div> -->
                 </div>
                 <button class="text-slate-400 p-2"><i class="fa-solid fa-phone"></i></button>
                 <button class="text-slate-400 p-2"><i class="fa-solid fa-circle-info"></i></button>
@@ -275,39 +275,7 @@
 
             <!-- Messages Area -->
             <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
-                <div class="text-center text-xs text-slate-300 my-4">今日 10:30</div>
                 
-                <!-- Received Message -->
-                <div class="flex items-end gap-2">
-                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Bob" class="w-8 h-8 rounded-full bg-slate-200 border border-white shadow-sm mb-1">
-                    <div>
-                        <span class="text-[10px] text-slate-400 ml-1 mb-1 block">Bob</span>
-                        <div class="bg-white px-4 py-2 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 text-sm text-slate-700 max-w-[240px]">
-                            おはようございます！今日の進捗どうですか？
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Sent Message -->
-                <div class="flex items-end gap-2 justify-end">
-                    <div>
-                        <div class="bg-blue-500 px-4 py-2 rounded-2xl rounded-br-none shadow-md shadow-blue-100 text-sm text-white max-w-[240px]">
-                            順調です！UIの実装が終わりました。
-                        </div>
-                        <span class="text-[10px] text-slate-300 mr-1 mt-1 block text-right">既読 10:32</span>
-                    </div>
-                </div>
-
-                 <!-- Received Message -->
-                 <div class="flex items-end gap-2">
-                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alice" class="w-8 h-8 rounded-full bg-slate-200 border border-white shadow-sm mb-1">
-                    <div>
-                        <span class="text-[10px] text-slate-400 ml-1 mb-1 block">Alice</span>
-                        <div class="bg-white px-4 py-2 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 text-sm text-slate-700 max-w-[240px]">
-                            お疲れ様です。後で確認しますね！👍
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- Input Area -->
@@ -473,27 +441,27 @@
         }
 
         // モック返信
-        function receiveMockMessage() {
-            const chatContainer = document.getElementById('chat-messages');
-            const responses = ["なるほど！", "了解です。", "すごいですね！", "確認します。"];
-            const randomRes = responses[Math.floor(Math.random() * responses.length)];
+        // function receiveMockMessage() {
+        //     const chatContainer = document.getElementById('chat-messages');
+        //     const responses = ["なるほど！", "了解です。", "すごいですね！", "確認します。"];
+        //     const randomRes = responses[Math.floor(Math.random() * responses.length)];
             
-            const messageHtml = `
-            <div class="flex items-end gap-2 animate-fade-in-up">
-                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Bob" class="w-8 h-8 rounded-full bg-slate-200 border border-white shadow-sm mb-1">
-                <div>
-                    <span class="text-[10px] text-slate-400 ml-1 mb-1 block">Bob</span>
-                    <div class="bg-white px-4 py-2 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 text-sm text-slate-700 max-w-[240px]">
-                        ${randomRes}
-                    </div>
-                </div>
-            </div>
-            `;
-             const div = document.createElement('div');
-                div.innerHTML = messageHtml;
-                chatContainer.appendChild(div.firstElementChild);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
+        //     const messageHtml = `
+        //     <div class="flex items-end gap-2 animate-fade-in-up">
+        //         <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Bob" class="w-8 h-8 rounded-full bg-slate-200 border border-white shadow-sm mb-1">
+        //         <div>
+        //             <span class="text-[10px] text-slate-400 ml-1 mb-1 block">Bob</span>
+        //             <div class="bg-white px-4 py-2 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 text-sm text-slate-700 max-w-[240px]">
+        //                 ${randomRes}
+        //             </div>
+        //         </div>
+        //     </div>
+        //     `;
+        //      const div = document.createElement('div');
+        //         div.innerHTML = messageHtml;
+        //         chatContainer.appendChild(div.firstElementChild);
+        //         chatContainer.scrollTop = chatContainer.scrollHeight;
+        // }
 
         // XSS対策用エスケープ
         function escapeHtml(unsafe) {
