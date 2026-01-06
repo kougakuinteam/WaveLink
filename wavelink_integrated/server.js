@@ -143,6 +143,12 @@ wss.on('connection', (ws) => {
         if(!roomId) return;
         const room = ensureRoom(roomId);
 
+        // ensure ws.roomId for signaling + cleanup on close
+        if(ws.roomId && ws.roomId !== roomId){
+          leaveRoom(ws, 'switch-room');
+        }
+        ws.roomId = roomId;
+
         if(room.voice.has(ws.id)){
           safeSend(ws, { type:'voice-joined', roomId, clientId: ws.id, existingPeers: Array.from(room.voice.keys()).filter(x=>x!==ws.id) });
           return;
