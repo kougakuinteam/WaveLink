@@ -2,9 +2,12 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const WebSocket = require('ws');
+const crypto = require('crypto');
+const db = require('./db');
 
 const app = express();
 app.use(express.static(path.join(__dirname)));
+app.use(express.json());
 app.get('/health', (_, res) => res.send('ok'));
 
 const server = http.createServer(app);
@@ -20,6 +23,7 @@ const rooms = new Map();
 let idSeq = 1;
 
 const MAX_VOICE_PEERS = 2;
+const HISTORY_LIMIT = 200;
 
 // helper
 function ensureRoom(roomId){
@@ -28,6 +32,84 @@ function ensureRoom(roomId){
   }
   return rooms.get(roomId);
 }
+
+function hashPassword(raw){
+  return crypto.createHash('sha256').update(String(raw || '')).digest('hex');
+}
+
+async function ensureRoomDb(roomId){
+  try{
+    await db.ensureRoom(roomId);
+  }catch(e){
+    console.log('[db] ensureRoom failed:', e.message);
+  }
+}
+
+async function updateUserRoomDb(mail, roomId){
+  if(!mail) return;
+  try{
+    await db.updateUserRoom(mail, roomId);
+  }catch(e){
+    console.log('[db] updateUserRoom failed:', e.message);
+  }
+}
+
+async function fetchHistoryDb(roomId){
+  try{
+    return await db.fetchMessages(roomId, HISTORY_LIMIT);
+  }catch(e){
+    console.log('[db] fetchMessages failed:', e.message);
+    return null;
+  }
+}
+
+async function insertMessageDb(roomId, senderMail, text, ts){
+  try{
+    await db.insertMessage(roomId, senderMail, text, new Date(ts));
+    return true;
+  }catch(e){
+    console.log('[db] insertMessage failed:', e.message);
+    return false;
+  }
+}
+
+app.post('/api/register', async (req, res) => {
+  const mail = String(req.body?.mail || '').trim();
+  const name = String(req.body?.name || '').trim();
+  const password = String(req.body?.password || '');
+  const iconUrl = String(req.body?.iconUrl || '').trim() || null;
+  if(!mail || !name || !password){
+    return res.status(400).json({ ok:false, error:'missing_fields' });
+  }
+  try{
+    const exist = await db.findUserByMail(mail);
+    if(exist){
+      return res.status(409).json({ ok:false, error:'mail_exists' });
+    }
+    await db.createUser(mail, name, hashPassword(password), iconUrl);
+    return res.json({ ok:true });
+  }catch(e){
+    return res.status(500).json({ ok:false, error:'db_error' });
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  const mail = String(req.body?.mail || '').trim();
+  const password = String(req.body?.password || '');
+  if(!mail || !password){
+    return res.status(400).json({ ok:false, error:'missing_fields' });
+  }
+  try{
+    const user = await db.findUserByMail(mail);
+    if(!user) return res.status(401).json({ ok:false, error:'invalid_login' });
+    if(user.password_hash !== hashPassword(password)){
+      return res.status(401).json({ ok:false, error:'invalid_login' });
+    }
+    return res.json({ ok:true, user:{ mail:user.mail, name:user.name, iconUrl:user.icon_url, roomUrl:user.room_url } });
+  }catch(e){
+    return res.status(500).json({ ok:false, error:'db_error' });
+  }
+});
 
 function safeSend(ws, obj){
   try{
@@ -76,7 +158,7 @@ wss.on('connection', (ws) => {
 
   ws.on('pong', () => { ws.lastPong = Date.now(); ws.isAlive = true; });
 
-  ws.on('message', (buf) => {
+  ws.on('message', async (buf) => {
     let msg;
     try { msg = JSON.parse(buf.toString()); } catch { return; }
 
@@ -85,9 +167,13 @@ wss.on('connection', (ws) => {
       case 'join': {
         const roomId = String(msg.roomId || '').trim();
         const mode = String(msg.mode || 'chat');
+        const mail = String(msg.mail || '').trim();
 
         if (!roomId) return;
         const room = ensureRoom(roomId);
+
+        ensureRoomDb(roomId);
+        updateUserRoomDb(mail, roomId);
 
         // always join clients (multi)
         if(ws.roomId && ws.roomId !== roomId){
@@ -115,7 +201,9 @@ wss.on('connection', (ws) => {
         const roomId = String(msg.roomId || ws.roomId || '').trim();
         if(!roomId) return;
         const room = ensureRoom(roomId);
-        safeSend(ws, { type:'history-data', roomId, items: room.history });
+        const dbItems = await fetchHistoryDb(roomId);
+        const items = dbItems || room.history;
+        safeSend(ws, { type:'history-data', roomId, items });
         break;
       }
 
@@ -126,6 +214,7 @@ wss.on('connection', (ws) => {
         const room = ensureRoom(roomId);
 
         const user = String(msg.user || 'anon').slice(0, 64);
+        const mail = String(msg.mail || user || 'anon').slice(0, 255);
         const text = String(msg.text || '');
         if(!text.trim()) return;
 
@@ -133,6 +222,7 @@ wss.on('connection', (ws) => {
         room.history.push(item);
         if(room.history.length > 200) room.history.shift();
 
+        await insertMessageDb(roomId, mail, text, item.ts);
         broadcast(roomId, { type:'chat', roomId, item }, null, 'clients');
         break;
       }
