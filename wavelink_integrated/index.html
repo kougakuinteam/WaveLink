@@ -418,27 +418,57 @@
             }
         }
 
-        // ログイン処理 (Mock)
-        function handleLogin(event) {
+        async function apiPost(url, body){
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(()=>({}));
+            if(!res.ok || !data.ok) throw new Error(data.error || 'request_failed');
+            return data;
+        }
+
+        // ログイン処理
+        async function handleLogin(event) {
             event.preventDefault();
             const form = event.target;
-            const email = (form.querySelector('input[type="email"]')?.value || form.querySelector('input[type="text"]')?.value || 'guest').trim();
-            currentUserName = email || 'guest';
-            localStorage.setItem('wl_user', currentUserName);
-            navigateTo('page-main');
+            const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+            const password = (form.querySelector('input[type="password"]')?.value || '').trim();
+            if(!email || !password){ alert('メールとパスワードを入力してください'); return; }
+            try{
+                const data = await apiPost('/api/login', { mail: email, password });
+                currentUserName = data.user?.name || email;
+                currentUserMail = data.user?.mail || email;
+                localStorage.setItem('wl_user_name', currentUserName);
+                localStorage.setItem('wl_user_mail', currentUserMail);
+                navigateTo('page-main');
+            }catch(e){
+                alert('ログインに失敗しました');
+            }
         }
 
 
-        // 新規登録処理 (Mock)
-        function handleSignup(event) {
+        // 新規登録処理
+        async function handleSignup(event) {
             event.preventDefault();
             const form = event.target;
             const name = (form.querySelector('input[name="name"]')?.value || form.querySelector('input[type="text"]')?.value || '').trim();
             const email = (form.querySelector('input[type="email"]')?.value || '').trim();
-            currentUserName = (name || email || 'guest');
-            localStorage.setItem('wl_user', currentUserName);
-            alert('登録が完了しました！');
-            navigateTo('page-main');
+            const password = (form.querySelector('input[type="password"]')?.value || '').trim();
+            if(!name || !email || !password){ alert('必須項目を入力してください'); return; }
+            try{
+                await apiPost('/api/register', { mail: email, name, password });
+                const data = await apiPost('/api/login', { mail: email, password });
+                currentUserName = data.user?.name || name || email;
+                currentUserMail = data.user?.mail || email;
+                localStorage.setItem('wl_user_name', currentUserName);
+                localStorage.setItem('wl_user_mail', currentUserMail);
+                alert('登録が完了しました！');
+                navigateTo('page-main');
+            }catch(e){
+                alert('登録に失敗しました');
+            }
         }
 
 
@@ -451,7 +481,8 @@
 
         // ====== app state (demo) ======
         let currentRoomId = null;
-        let currentUserName = (localStorage.getItem('wl_user')||'guest');
+        let currentUserName = (localStorage.getItem('wl_user_name') || localStorage.getItem('wl_user') || 'guest');
+        let currentUserMail = (localStorage.getItem('wl_user_mail') || '');
 
         // ====== chat ws ======
         const chat = { ws: null };
@@ -549,7 +580,7 @@
             if(ridEl) ridEl.textContent = roomId || '-';
 
             await ensureChatWS();
-            chatSend({ type:'join', roomId: roomId, mode:'chat' });
+            chatSend({ type:'join', roomId: roomId, mode:'chat', mail: currentUserMail });
             chatSend({ type:'history', roomId: roomId });
         }
 
@@ -617,7 +648,7 @@
                 return;
             }
 
-            chatSend({ type:'chat', roomId: currentRoomId, user: currentUserName, text });
+            chatSend({ type:'chat', roomId: currentRoomId, user: currentUserName, mail: currentUserMail || currentUserName, text });
             input.value = '';
         }
 
