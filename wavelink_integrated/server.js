@@ -89,6 +89,7 @@ app.post('/api/register', async (req, res) => {
     await db.createUser(mail, name, hashPassword(password), iconUrl);
     return res.json({ ok:true });
   }catch(e){
+    console.log('[api/register] db_error:', e.message);
     return res.status(500).json({ ok:false, error:'db_error' });
   }
 });
@@ -107,6 +108,7 @@ app.post('/api/login', async (req, res) => {
     }
     return res.json({ ok:true, user:{ mail:user.mail, name:user.name, iconUrl:user.icon_url, roomUrl:user.room_url } });
   }catch(e){
+    console.log('[api/login] db_error:', e.message);
     return res.status(500).json({ ok:false, error:'db_error' });
   }
 });
