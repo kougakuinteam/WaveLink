@@ -113,6 +113,31 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+app.post('/api/profile', async (req, res) => {
+  const mail = String(req.body?.mail || '').trim();
+  const newMail = String(req.body?.newMail || '').trim() || mail;
+  const name = String(req.body?.name || '').trim();
+  const password = String(req.body?.password || '');
+  if(!mail || !newMail || !name){
+    return res.status(400).json({ ok:false, error:'missing_fields' });
+  }
+  try{
+    const user = await db.findUserByMail(mail);
+    if(!user) return res.status(404).json({ ok:false, error:'user_not_found' });
+    if(newMail !== mail){
+      const exist = await db.findUserByMail(newMail);
+      if(exist) return res.status(409).json({ ok:false, error:'mail_exists' });
+    }
+    const passwordHash = password ? hashPassword(password) : null;
+    const updated = await db.updateUserProfile(mail, newMail, name, passwordHash);
+    if(!updated) return res.status(500).json({ ok:false, error:'update_failed' });
+    return res.json({ ok:true, user:{ mail:newMail, name } });
+  }catch(e){
+    console.log('[api/profile] db_error:', e.message);
+    return res.status(500).json({ ok:false, error:'db_error' });
+  }
+});
+
 function safeSend(ws, obj){
   try{
     if(ws && ws.readyState === WebSocket.OPEN){

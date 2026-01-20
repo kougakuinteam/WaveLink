@@ -78,6 +78,23 @@ async function updateUserRoom(mail, roomUrl){
   await execute(sql, [roomUrl, mail]);
 }
 
+async function updateUserProfile(oldMail, newMail, name, passwordHash){
+  const fields = ['mail = ?', 'name = ?'];
+  const params = [newMail, name];
+  if(passwordHash){
+    fields.push('password_hash = ?');
+    params.push(passwordHash);
+  }
+  params.push(oldMail);
+  const sql = `
+    UPDATE wl_Users
+    SET ${fields.join(', ')}
+    WHERE mail = ?
+  `;
+  const rows = await execute(sql, params);
+  return rows?.affectedRows || 0;
+}
+
 module.exports = {
   ensureRoom,
   insertMessage,
@@ -85,4 +102,5 @@ module.exports = {
   createUser,
   findUserByMail,
   updateUserRoom,
+  updateUserProfile,
 };
