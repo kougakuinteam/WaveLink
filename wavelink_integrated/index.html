@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WaveLink</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* カスタムスクロールバー */
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 画面遷移アニメーション */
+        .page {
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            opacity: 0;
+            pointer-events: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scale(0.95);
+            display: none; /* 初期状態は非表示 */
+        }
+
+        .page.active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1);
+            display: flex; /* Flexboxで表示 */
+            flex-direction: column;
+        }
+
+        /* 波のアニメーション背景 (装飾) */
+        .wave-bg {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 50%;
+            background: url('data:image/svg+xml;utf8,%3Csvg viewBox="0 0 1440 320" xmlns="http://www.w3.org/2000/svg"%3E%3Cpath fill="%233b82f6" fill-opacity="0.1" d="M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"%3E%3C/path%3E%3C/svg%3E');
+            background-repeat: no-repeat;
+            background-position: bottom;
+            background-size: cover;
+            z-index: -1;
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div id="app" class="relative w-full h-full max-w-md mx-auto bg-white shadow-2xl overflow-hidden sm:rounded-xl sm:h-[90vh] sm:mt-[5vh] sm:border sm:border-slate-200">
+        
+        <!-- 背景装飾 -->
+        <div class="wave-bg"></div>
+
+        <!-- ==============================
+             1. ログイン画面
+        =============================== -->
+        <div id="page-login" class="page active justify-center items-center p-8">
+            <div class="w-full text-center mb-8">
+                <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-blue-500 text-white text-3xl mb-4 shadow-lg">
+                    <i class="fa-solid fa-water"></i>
+                </div>
+                <h1 class="text-3xl font-bold text-blue-600">WaveLink</h1>
+                <p class="text-slate-500 text-sm mt-1">世界とつながる、波のように。</p>
+            </div>
+
+            <form onsubmit="handleLogin(event)" class="w-full space-y-4">
+                <div class="space-y-1">
+                    <label class="text-xs font-bold text-slate-500 ml-1">メールアドレス</label>
+                    <div class="relative">
+                        <i class="fa-regular fa-envelope absolute left-3 top-3.5 text-slate-400"></i>
+                        <input type="email" placeholder="example@email.com" class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white transition-all" required>
+                    </div>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-xs font-bold text-slate-500 ml-1">パスワード</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-lock absolute left-3 top-3.5 text-slate-400"></i>
+                        <input type="password" placeholder="••••••••" class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white transition-all" required>
+                    </div>
+                </div>
+                
+                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-200 transition-all transform active:scale-95 mt-4">
+                    ログイン
+                </button>
+            </form>
+
+            <div class="mt-8 text-center">
+                <p class="text-sm text-slate-500">アカウントをお持ちでないですか？</p>
+                <button onclick="navigateTo('page-signup')" class="text-blue-500 font-bold hover:underline mt-1">新規登録はこちら</button>
+            </div>
+        </div>
+
+        <!-- ==============================
+             2. 新規登録画面
+        =============================== -->
+        <div id="page-signup" class="page justify-center items-center p-8 overflow-y-auto">
+            <div class="w-full text-center mb-6">
+                <h2 class="text-2xl font-bold text-slate-800">新規登録</h2>
+                <p class="text-slate-500 text-xs">新しい冒険を始めましょう</p>
+            </div>
+
+            <form onsubmit="handleSignup(event)" class="w-full space-y-3">
+                <!-- アイコン選択 -->
+                <div class="flex flex-col items-center mb-4 group cursor-pointer relative">
+                    <div class="w-24 h-24 rounded-full bg-slate-100 border-2 border-dashed border-blue-300 flex items-center justify-center text-slate-400 hover:bg-blue-50 transition-colors overflow-hidden relative">
+                        <i class="fa-solid fa-camera text-2xl group-hover:opacity-0 transition-opacity"></i>
+                        <img id="signup-icon-preview" src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" class="absolute w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity" alt="Preview">
+                        <div class="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 text-white text-xs font-bold">変更</div>
+                    </div>
+                    <span class="text-xs text-slate-400 mt-2">アイコンを選択</span>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="text-xs font-bold text-slate-500 ml-1">ニックネーム</label>
+                    <input type="text" placeholder="Wavelinker" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+                </div>
+                
+                <div class="space-y-1">
+                    <label class="text-xs font-bold text-slate-500 ml-1">メールアドレス</label>
+                    <input type="email" placeholder="email@example.com" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="text-xs font-bold text-slate-500 ml-1">パスワード</label>
+                    <input type="password" placeholder="••••••••" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="text-xs font-bold text-slate-500 ml-1">パスワード（確認）</label>
+                    <input type="password" placeholder="••••••••" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-200 transition-all transform active:scale-95 mt-4">
+                    登録して始める
+                </button>
+            </form>
+
+            <div class="mt-6 text-center">
+                <button onclick="navigateTo('page-login')" class="text-slate-500 text-sm hover:text-blue-500">
+                    <i class="fa-solid fa-arrow-left mr-1"></i> ログイン画面に戻る
+                </button>
+            </div>
+        </div>
+
+        <!-- ==============================
+             3. メイン画面 (ホーム)
+        =============================== -->
+        <div id="page-main" class="page bg-slate-50">
+            <!-- Header -->
+            <div class="bg-white px-6 py-4 shadow-sm flex justify-between items-center z-10">
+                <div class="flex items-center gap-3" onclick="openProfilePage()">
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" class="w-10 h-10 rounded-full bg-blue-100 border border-blue-200 cursor-pointer" alt="User Icon">
+                    <!-- <div>
+                        <p class="text-xs text-slate-400">こんにちは</p>
+                        <p class="font-bold text-slate-700 leading-none">Felix さん</p>
+                    </div> -->
+                </div>
+                <button onclick="openProfilePage()" class="text-slate-400 hover:text-blue-500 transition-colors">
+                    <i class="fa-solid fa-gear text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 p-6 overflow-y-auto space-y-6">
+                
+                <!-- Action Cards -->
+                <div class="grid grid-cols-1 gap-4">
+                    <!-- Create Chat -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div class="absolute right-[-20px] top-[-20px] w-24 h-24 bg-blue-50 rounded-full group-hover:scale-110 transition-transform"></div>
+                        <div class="relative z-10">
+                            <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white mb-3 shadow-blue-200 shadow-md">
+                                <i class="fa-solid fa-plus"></i>
+                            </div>
+                            <h3 class="font-bold text-lg text-slate-800">チャット作成</h3>
+                            <p class="text-xs text-slate-500 mb-4">新しいルームを作成してURLを共有</p>
+                            <button onclick="createChat()" class="w-full py-2 bg-blue-50 text-blue-600 font-bold rounded-lg hover:bg-blue-100 transition-colors text-sm">
+                                新規作成
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Join Chat -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div class="absolute right-[-20px] top-[-20px] w-24 h-24 bg-teal-50 rounded-full group-hover:scale-110 transition-transform"></div>
+                        <div class="relative z-10">
+                            <div class="w-10 h-10 bg-teal-500 rounded-lg flex items-center justify-center text-white mb-3 shadow-teal-200 shadow-md">
+                                <i class="fa-solid fa-right-to-bracket"></i>
+                            </div>
+                            <h3 class="font-bold text-lg text-slate-800">チャット参加</h3>
+                            <p class="text-xs text-slate-500 mb-4">URLを入力して参加</p>
+                            <div class="flex gap-2">
+                                <input type="text" id="join-room-input" placeholder="https://..." class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400">
+                                <button onclick="joinChat()" class="px-4 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors text-sm font-bold">
+                                    GO
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Chats (Mock) -->
+                <div>
+                    <h4 class="text-sm font-bold text-slate-400 mb-3 ml-1">履歴</h4>
+                    <div class="space-y-2">
+                        <div onclick="navigateTo('page-chat')" class="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex items-center gap-3 cursor-pointer hover:bg-slate-50 transition-colors">
+                            <div class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500">
+                                <i class="fa-solid fa-hashtag"></i>
+                            </div>
+                            <!-- <div class="flex-1">
+                                <p class="font-bold text-sm text-slate-700">開発チーム</p>
+                                <p class="text-xs text-slate-400 truncate">次のミーティングは15時です</p>
+                            </div>
+                            <span class="text-[10px] text-slate-300">10分前</span>
+                        </div>
+                        <div onclick="navigateTo('page-chat')" class="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex items-center gap-3 cursor-pointer hover:bg-slate-50 transition-colors">
+                            <div class="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-500">
+                                <i class="fa-solid fa-users"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="font-bold text-sm text-slate-700">ランチ会</p>
+                                <p class="text-xs text-slate-400 truncate">どこ行きますか？</p>
+                            </div>
+                            <span class="text-[10px] text-slate-300">昨日</span> -->
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==============================
+             4. チャット画面
+        =============================== -->
+        <div id="page-chat" class="page bg-slate-50 flex-col h-full">
+            <!-- Header -->
+            <div class="bg-white px-4 py-3 shadow-sm flex items-center gap-3 z-20">
+                <button onclick="navigateTo('page-main')" class="text-slate-400 hover:text-slate-600 p-2">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <div class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500 text-lg">
+                    <i class="fa-solid fa-hashtag"></i>
+                </div>
+                <div class="flex-1">
+                    <!-- <h3 class="font-bold text-slate-800 text-sm">開発チーム</h3>
+                    <div class="flex items-center gap-1">
+                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                        <span class="text-xs text-slate-400">3人がオンライン</span>
+                    </div> -->
+                </div>
+                <button id="open-call-btn" class="text-slate-400 p-2" onclick="openCallModal()"><i class="fa-solid fa-phone"></i></button>
+                <!-- <button class="text-slate-400 p-2"><i class="fa-solid fa-circle-info"></i></button> -->
+            </div>
+
+            <!-- Messages Area -->
+            <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+                
+            </div>
+
+            <!-- Input Area -->
+            <div class="bg-white p-3 border-t border-slate-100 z-20">
+                <form onsubmit="sendMessage(event)" class="flex gap-2 items-center">
+                    <!-- <button type="button" class="text-slate-400 p-2 hover:text-blue-500"><i class="fa-solid fa-plus"></i></button> -->
+                    <input id="message-input" type="text" placeholder="メッセージを入力..." class="flex-1 bg-slate-50 border-0 rounded-full px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:bg-white transition-all text-sm">
+                    <!-- <button type="button" class="text-slate-400 p-2 hover:text-blue-500"><i class="fa-regular fa-face-smile"></i></button> -->
+                    <button type="submit" class="w-10 h-10 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors">
+                        <i class="fa-solid fa-paper-plane text-sm"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- ==============================
+             5. 個人情報変更画面
+        =============================== -->
+        <div id="page-profile" class="page bg-white flex-col">
+            <!-- Header -->
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center">
+                <button onclick="navigateTo('page-main')" class="text-slate-500 hover:text-slate-800 p-1 mr-4">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <h2 class="text-lg font-bold text-slate-800">プロフィール編集</h2>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-6">
+                <div class="flex flex-col items-center mb-8">
+                    <div class="relative group cursor-pointer">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" class="w-28 h-28 rounded-full bg-slate-50 border-4 border-white shadow-lg" alt="Profile">
+                        <div class="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i class="fa-solid fa-camera text-white text-xl"></i>
+                        </div>
+                        <button class="absolute bottom-0 right-0 bg-blue-500 text-white w-8 h-8 rounded-full border-2 border-white shadow-sm flex items-center justify-center">
+                            <i class="fa-solid fa-pen text-xs"></i>
+                        </button>
+                    </div>
+                    <p class="mt-3 text-slate-500 text-xs">ID: 8839201</p>
+                </div>
+
+                <form onsubmit="handleProfileUpdate(event)" class="space-y-5">
+                    <div class="space-y-1">
+                        <label class="text-xs font-bold text-slate-500 ml-1">ニックネーム</label>
+                        <input id="profile-name" type="text" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    </div>
+
+                    <div class="space-y-1">
+                        <label class="text-xs font-bold text-slate-500 ml-1">メールアドレス</label>
+                        <input id="profile-email" type="email" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    </div>
+
+                    <div class="space-y-1">
+                        <label class="text-xs font-bold text-slate-500 ml-1">新しいパスワード</label>
+                        <input id="profile-password" type="password" placeholder="変更する場合のみ入力" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    </div>
+
+                    <div class="pt-4">
+                        <button type="submit" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95">
+                            変更を保存
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        </div>
+
+        <!-- ==============================
+             6. 通話モーダル（P2P 1対1）
+        =============================== -->
+        <div id="call-modal" class="fixed inset-0 z-50 hidden">
+            <div class="absolute inset-0 bg-black/50" onclick="closeCallModal()"></div>
+
+            <div class="absolute inset-x-0 bottom-0 sm:inset-0 sm:flex sm:items-center sm:justify-center p-0 sm:p-6">
+                <div class="relative w-full sm:max-w-md bg-white sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden">
+                    <div class="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-blue-500 text-white flex items-center justify-center">
+                            <i class="fa-solid fa-phone"></i>
+                        </div>
+                        <div class="flex-1">
+                            <div class="font-bold text-slate-800">音声通話</div>
+                            <div id="call-status" class="text-xs text-slate-500">未接続</div>
+                        </div>
+                        <button class="text-slate-400 hover:text-slate-700 p-2" onclick="closeCallModal()">
+                            <i class="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-5 space-y-4">
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                            <div class="flex items-center gap-3">
+                                <div class="text-xs font-bold text-slate-500">ルーム</div>
+                                <div id="call-room" class="text-xs text-slate-700 truncate flex-1">-</div>
+                            </div>
+                            <div class="mt-3 grid grid-cols-1 gap-2">
+                                <label class="text-xs font-bold text-slate-500">マイク</label>
+                                <select id="call-mic-select" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm"></select>
+                                <p class="text-[11px] text-slate-400">※ マイク権限が取れない場合は自動で「聴くのみ」になります。</p>
+                            </div>
+
+                            <div class="mt-4 flex gap-2">
+                                <button id="call-join-btn" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2.5 rounded-xl shadow-md shadow-blue-200 active:scale-95 transition-all">通話開始</button>
+                                <button id="call-leave-btn" disabled class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed">終了</button>
+                            </div>
+                            <button id="call-mute-btn" disabled class="w-full mt-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-2.5 rounded-xl active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed">ミュート</button>
+                        </div>
+
+                        <div class="bg-white border border-slate-100 rounded-xl p-4">
+                            <div class="text-xs font-bold text-slate-500 mb-2">相手の音声</div>
+                            <div id="call-peers" class="space-y-3">
+                                <div class="text-sm text-slate-400">まだ相手がいません</div>
+                            </div>
+                        </div>
+
+                        <details class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                            <summary class="text-xs font-bold text-slate-500 cursor-pointer">接続ログ（デバッグ）</summary>
+                            <pre id="call-log" class="mt-3 text-[11px] leading-relaxed text-slate-600 whitespace-pre-wrap max-h-40 overflow-auto"></pre>
+                        </details>
+
+                        <audio id="call-self-audio" autoplay playsinline muted class="hidden"></audio>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+    <!-- JavaScript Logic -->
+    <script>
+        // 画面遷移関数
+        function navigateTo(pageId) {
+            // すべてのページを非表示
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            // 指定されたページを表示
+            const target = document.getElementById(pageId);
+            if (target) {
+                target.classList.add('active');
+            }
+        }
+
+        async function apiPost(url, body){
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(()=>({}));
+            if(!res.ok || !data.ok) throw new Error(data.error || 'request_failed');
+            return data;
+        }
+
+        // ログイン処理
+        async function handleLogin(event) {
+            event.preventDefault();
+            const form = event.target;
+            const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+            const password = (form.querySelector('input[type="password"]')?.value || '').trim();
+            if(!email || !password){ alert('メールとパスワードを入力してください'); return; }
+            try{
+                const data = await apiPost('/api/login', { mail: email, password });
+                currentUserName = data.user?.name || email;
+                currentUserMail = data.user?.mail || email;
+                localStorage.setItem('wl_user_name', currentUserName);
+                localStorage.setItem('wl_user_mail', currentUserMail);
+                navigateTo('page-main');
+            }catch(e){
+                alert('ログインに失敗しました');
+            }
+        }
+
+
+        // 新規登録処理
+        async function handleSignup(event) {
+            event.preventDefault();
+            const form = event.target;
+            const name = (form.querySelector('input[name="name"]')?.value || form.querySelector('input[type="text"]')?.value || '').trim();
+            const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+            const password = (form.querySelector('input[type="password"]')?.value || '').trim();
+            if(!name || !email || !password){ alert('必須項目を入力してください'); return; }
+            try{
+                await apiPost('/api/register', { mail: email, name, password });
+                const data = await apiPost('/api/login', { mail: email, password });
+                currentUserName = data.user?.name || name || email;
+                currentUserMail = data.user?.mail || email;
+                localStorage.setItem('wl_user_name', currentUserName);
+                localStorage.setItem('wl_user_mail', currentUserMail);
+                alert('登録が完了しました！');
+                navigateTo('page-main');
+            }catch(e){
+                alert('登録に失敗しました');
+            }
+        }
+
+
+        function openProfilePage(){
+            const nameEl = document.getElementById('profile-name');
+            const mailEl = document.getElementById('profile-email');
+            const passEl = document.getElementById('profile-password');
+            if(nameEl) nameEl.value = currentUserName || '';
+            if(mailEl) mailEl.value = currentUserMail || '';
+            if(passEl) passEl.value = '';
+            navigateTo('page-profile');
+        }
+
+        // プロフィール更新
+        async function handleProfileUpdate(event) {
+            event.preventDefault();
+            if(!currentUserMail){
+                alert('先にログインしてください');
+                return;
+            }
+            const name = document.getElementById('profile-name')?.value?.trim() || '';
+            const mail = document.getElementById('profile-email')?.value?.trim() || '';
+            const password = document.getElementById('profile-password')?.value || '';
+            if(!name || !mail){
+                alert('ニックネームとメールアドレスを入力してください');
+                return;
+            }
+            try{
+                const data = await apiPost('/api/profile', {
+                    mail: currentUserMail,
+                    newMail: mail,
+                    name,
+                    password: password || null,
+                });
+                currentUserName = data.user?.name || name;
+                currentUserMail = data.user?.mail || mail;
+                localStorage.setItem('wl_user_name', currentUserName);
+                localStorage.setItem('wl_user_mail', currentUserMail);
+                alert('プロフィールを更新しました。');
+                navigateTo('page-main');
+            }catch(e){
+                alert('プロフィール更新に失敗しました');
+            }
+        }
+
+        // ====== app state (demo) ======
+        let currentRoomId = null;
+        let currentUserName = (localStorage.getItem('wl_user_name') || localStorage.getItem('wl_user') || 'guest');
+        let currentUserMail = (localStorage.getItem('wl_user_mail') || '');
+
+        // ====== chat ws ======
+        const chat = { ws: null };
+
+        function wsUrl(){
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            return `${proto}://${location.host}/ws`;
+        }
+
+        function ensureChatWS(){
+            return new Promise((resolve, reject)=>{
+                if(chat.ws && (chat.ws.readyState===WebSocket.OPEN || chat.ws.readyState===WebSocket.CONNECTING)){
+                    if(chat.ws.readyState===WebSocket.OPEN) return resolve();
+                    const timer = setInterval(()=>{
+                        if(chat.ws.readyState===WebSocket.OPEN){ clearInterval(timer); resolve(); }
+                        if(chat.ws.readyState===WebSocket.CLOSED){ clearInterval(timer); reject(new Error('ws closed')); }
+                    }, 50);
+                    return;
+                }
+                chat.ws = new WebSocket(wsUrl());
+                chat.ws.onopen = ()=> resolve();
+                chat.ws.onclose = ()=>{};
+                chat.ws.onerror = ()=>{};
+                chat.ws.onmessage = onChatWSMessage;
+            });
+        }
+
+        function chatSend(obj){
+            try{
+                if(chat.ws && chat.ws.readyState===WebSocket.OPEN){
+                    chat.ws.send(JSON.stringify(obj));
+                }
+            }catch(e){}
+        }
+
+        function clearMessageListUI(){
+            const c = document.getElementById('chat-messages');
+            if(c) c.innerHTML = '';
+        }
+
+        function appendMessageToUI(user, text, ts){
+            const chatContainer = document.getElementById('chat-messages');
+            if(!chatContainer) return;
+
+            const now = ts ? new Date(ts) : new Date();
+            const timeStr = now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0');
+
+            const isMine = (String(user||'') === String(currentUserName||''));
+
+            const wrap = document.createElement('div');
+            wrap.className = isMine ? 'flex justify-end' : 'flex justify-start';
+
+            const bubble = document.createElement('div');
+            bubble.className = (isMine ? 'bg-teal-600 text-white' : 'bg-white text-slate-700') + ' rounded-2xl px-4 py-2 max-w-[75%] shadow-sm';
+
+            const meta = document.createElement('div');
+            meta.className = 'text-[10px] opacity-70 mb-1';
+            meta.textContent = `${user||'anon'} ・ ${timeStr}`;
+
+            const body = document.createElement('div');
+            body.className = 'text-sm whitespace-pre-wrap break-words';
+            body.textContent = text;
+
+            bubble.appendChild(meta);
+            bubble.appendChild(body);
+            wrap.appendChild(bubble);
+            chatContainer.appendChild(wrap);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function onChatWSMessage(ev){
+            let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
+
+            if(msg.type === 'history-data'){
+                if(msg.roomId !== currentRoomId) return;
+                clearMessageListUI();
+                (msg.items||[]).forEach(it=>{
+                    appendMessageToUI(it.user, it.text, it.ts);
+                });
+                return;
+            }
+
+            if(msg.type === 'chat'){
+                if(msg.roomId !== currentRoomId) return;
+                const it = msg.item;
+                if(!it) return;
+                appendMessageToUI(it.user, it.text, it.ts);
+                return;
+            }
+        }
+
+        async function switchRoom(roomId){
+            currentRoomId = roomId;
+            const ridEl = document.getElementById('current-room-id');
+            if(ridEl) ridEl.textContent = roomId || '-';
+
+            await ensureChatWS();
+            chatSend({ type:'join', roomId: roomId, mode:'chat', mail: currentUserMail });
+            chatSend({ type:'history', roomId: roomId });
+        }
+
+
+        // チャット作成 (Mock)
+        function createChat() {
+            currentRoomId = Math.random().toString(36).substring(2, 10);
+            const url = `${location.origin}${location.pathname}?room=${encodeURIComponent(currentRoomId)}`;
+
+            if(navigator.clipboard && navigator.clipboard.writeText){
+                navigator.clipboard.writeText(url).then(()=>{
+                    alert("ルームを作成しました！リンクをコピーしました。");
+                }).catch(()=>{
+                    prompt("チャットルームを作成しました！このURLを共有してください:", url);
+                });
+            }else{
+                prompt("チャットルームを作成しました！このURLを共有してください:", url);
+            }
+
+            switchRoom(currentRoomId);
+            navigateTo('page-chat');
+        }
+
+
+        // チャット参加 (Mock)
+        function extractRoomIdFromInput(input){
+            if(!input)return "";
+            input = String(input).trim();
+            if(!input)return "";
+            try{
+                if(input.startsWith("http")){
+                    const u = new URL(input);
+                    return (u.searchParams.get("room") || (u.hash?u.hash.replace("#",""):"") || "").trim();
+                }
+            }catch(e){}
+            return input;
+        }
+
+        function joinChat() {
+            const el = document.getElementById('join-room-input');
+            const raw = el ? el.value.trim() : "";
+            if(!raw){
+                alert("リンク（またはルームID）を入力してください");
+                return;
+            }
+            const rid = extractRoomIdFromInput(raw);
+            if(!rid){
+                alert("リンクが正しくありません");
+                return;
+            }
+            if(el) el.value = "";
+            switchRoom(rid);
+            navigateTo('page-chat');
+        }
+
+        // メッセージ送信処理
+        function sendMessage(event) {
+            event.preventDefault();
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            if(!text) return;
+
+            if(!currentRoomId){
+                alert('ルームに参加してください');
+                return;
+            }
+
+            chatSend({ type:'chat', roomId: currentRoomId, user: currentUserName, mail: currentUserMail || currentUserName, text });
+            input.value = '';
+        }
+
+        // モック返信
+        // function receiveMockMessage() {
+        //     const chatContainer = document.getElementById('chat-messages');
+        //     const responses = ["なるほど！", "了解です。", "すごいですね！", "確認します。"];
+        //     const randomRes = responses[Math.floor(Math.random() * responses.length)];
+            
+        //     const messageHtml = `
+        //     <div class="flex items-end gap-2 animate-fade-in-up">
+        //         <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Bob" class="w-8 h-8 rounded-full bg-slate-200 border border-white shadow-sm mb-1">
+        //         <div>
+        //             <span class="text-[10px] text-slate-400 ml-1 mb-1 block">Bob</span>
+        //             <div class="bg-white px-4 py-2 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 text-sm text-slate-700 max-w-[240px]">
+        //                 ${randomRes}
+        //             </div>
+        //         </div>
+        //     </div>
+        //     `;
+        //      const div = document.createElement('div');
+        //         div.innerHTML = messageHtml;
+        //         chatContainer.appendChild(div.firstElementChild);
+        //         chatContainer.scrollTop = chatContainer.scrollHeight;
+        // }
+
+        // XSS対策用エスケープ
+        function escapeHtml(unsafe) {
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        // アニメーション用のCSS追加
+        const style = document.createElement('style');
+        style.innerHTML = `
+            @keyframes fadeInUp {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .animate-fade-in-up {
+                animation: fadeInUp 0.3s ease-out forwards;
+            }
+        `;
+        document.head.appendChild(style);
+
+
+        // ==============================
+        // 1対1 音声通話（WebRTC P2P + WS Signaling）
+        // ==============================
+        const VOICE_ICE_SERVERS = [
+            { urls: 'stun:stun.l.google.com:19302' },
+        ];
+
+        const callUI = {
+            modal: document.getElementById('call-modal'),
+            status: document.getElementById('call-status'),
+            room: document.getElementById('call-room'),
+            mic: document.getElementById('call-mic-select'),
+            joinBtn: document.getElementById('call-join-btn'),
+            leaveBtn: document.getElementById('call-leave-btn'),
+            muteBtn: document.getElementById('call-mute-btn'),
+            peers: document.getElementById('call-peers'),
+            log: document.getElementById('call-log'),
+            selfAudio: document.getElementById('call-self-audio'),
+        };
+
+        const voice = {
+            ws: null,
+            roomId: null,
+            clientId: null,
+            joined: false,
+            muted: false,
+            localStream: null,
+            peerId: null,
+            pc: null,
+            remoteSet: false,
+            pendingCandidates: [],
+            remoteAudioEl: null,
+        };
+
+        function vLog(...args){
+            const line = args.map(a=>String(a)).join(' ');
+            callUI.log.textContent += line + "\
+";
+            callUI.log.scrollTop = callUI.log.scrollHeight;
+            console.log('[voice]', ...args);
+        }
+        function setCallStatus(t){
+            callUI.status.textContent = t;
+        }
+
+        function wsVoiceUrl(){
+            return (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws';
+        }
+
+        async function listCallMics(){
+            try{
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const mics = devices.filter(d=>d.kind==='audioinput');
+                callUI.mic.innerHTML = '<option value="">デフォルトマイク</option>' + mics.map(d=>`<option value="${d.deviceId}">${(d.label||('Mic '+d.deviceId.slice(-4))).replace(/</g,'&lt;')}</option>`).join('');
+            }catch(e){
+                callUI.mic.innerHTML = '<option value="">デフォルトマイク</option>';
+                vLog('[device] mic list failed:', e.message);
+            }
+        }
+        listCallMics();
+
+        async function ensureVoiceLocalStream(){
+            if(voice.localStream) return voice.localStream;
+            const deviceId = callUI.mic.value || undefined;
+            const constraints = deviceId ? {audio:{deviceId:{exact:deviceId}}, video:false} : {audio:true, video:false};
+            try{
+                const s = await navigator.mediaDevices.getUserMedia(constraints);
+                voice.localStream = s;
+                callUI.selfAudio.srcObject = s;
+                setCallStatus('マイクOK（通話可能）');
+                vLog('[local] got mic');
+            }catch(e){
+                voice.localStream = null;
+                setCallStatus('聴くのみ（マイク権限なし）');
+                vLog('[local] mic denied => listen only:', e.message);
+            }
+            return voice.localStream;
+        }
+
+        function openCallModal(){
+            if(!currentRoomId){
+                currentRoomId = prompt('ルームID（デモ）:', '')?.trim() || null;
+            }
+            callUI.room.textContent = currentRoomId || '-';
+            callUI.modal.classList.remove('hidden');
+        }
+        function closeCallModal(){
+            callUI.modal.classList.add('hidden');
+        }
+
+        async function connectVoiceWS(){
+            if(voice.ws && (voice.ws.readyState===WebSocket.OPEN || voice.ws.readyState===WebSocket.CONNECTING)) return;
+            voice.ws = new WebSocket(wsVoiceUrl());
+            voice.ws.onopen = ()=> vLog('[ws] open');
+            voice.ws.onclose = ()=>{ vLog('[ws] close'); cleanupVoice('ws close'); };
+            voice.ws.onerror = (e)=> vLog('[ws] err', e?.message||e);
+            voice.ws.onmessage = onVoiceWSMessage;
+        }
+        function voiceSend(obj){
+            try{ if(voice.ws && voice.ws.readyState===WebSocket.OPEN) voice.ws.send(JSON.stringify(obj)); }catch(e){ vLog('[ws] send fail', e.message); }
+        }
+
+        function resetPeersUI(){
+            callUI.peers.innerHTML = '<div class="text-sm text-slate-400">まだ相手がいません</div>';
+            voice.remoteAudioEl = null;
+        }
+
+        async function createPC(peerId){
+            voice.peerId = peerId;
+            voice.pc = new RTCPeerConnection({ iceServers: VOICE_ICE_SERVERS });
+            voice.remoteSet = false;
+            voice.pendingCandidates = [];
+
+            voice.pc.onicecandidate = (ev)=>{
+                if(ev.candidate){
+                    voiceSend({ type:'ice-candidate', to: peerId, candidate: ev.candidate });
+                }
+            };
+            voice.pc.onconnectionstatechange = ()=> vLog('[webrtc] conn', voice.pc.connectionState);
+            voice.pc.oniceconnectionstatechange = ()=> vLog('[webrtc] ice', voice.pc.iceConnectionState);
+            voice.pc.ontrack = (ev)=>{
+                if(!voice.remoteAudioEl){
+                    callUI.peers.innerHTML = '';
+                    const box = document.createElement('div');
+                    box.className = 'bg-slate-50 border border-slate-200 rounded-xl p-3';
+                    box.innerHTML = `<div class="text-xs font-bold text-slate-600 mb-2">相手（${peerId}）</div>`;
+                    const audio = document.createElement('audio');
+                    audio.autoplay = true;
+                    audio.playsInline = true;
+                    audio.className = 'w-full';
+                    box.appendChild(audio);
+                    callUI.peers.appendChild(box);
+                    voice.remoteAudioEl = audio;
+                }
+                voice.remoteAudioEl.srcObject = ev.streams[0];
+            };
+
+            // local tracks (only once)
+            if(voice.localStream){
+                voice.localStream.getTracks().forEach(t=> voice.pc.addTrack(t, voice.localStream));
+            }
+        }
+
+        async function doOffer(){
+            const offer = await voice.pc.createOffer({ offerToReceiveAudio: true });
+            await voice.pc.setLocalDescription(offer);
+            voiceSend({ type:'offer', to: voice.peerId, sdp: voice.pc.localDescription });
+        }
+
+        async function onVoiceWSMessage(ev){
+            let msg; try{ msg=JSON.parse(ev.data); }catch{ return; }
+            switch(msg.type){
+                case 'room-full': {
+                    setCallStatus('通話不可：ルームが満員（2人まで）');
+                    vLog('[room] full', msg.roomId, 'size=', msg.size);
+                    cleanupVoice('room full');
+                    break;
+                }
+                case 'voice-joined': {
+                    voice.clientId = msg.clientId;
+                    voice.joined = true;
+                    callUI.joinBtn.disabled = true;
+                    callUI.leaveBtn.disabled = false;
+                    callUI.muteBtn.disabled = false;
+                    callUI.muteBtn.textContent = 'ミュート';
+                    setCallStatus('接続中… 相手を待っています');
+                    vLog('[room] joined', voice.roomId, 'id=', voice.clientId);
+                    // existingPeers: only 0 or 1
+                    const peers = msg.existingPeers || [];
+                    if(peers.length>0){
+                        const peerId = peers[0];
+                        await createPC(peerId);
+                        setCallStatus('通話接続中…');
+                        await doOffer();
+                    }
+                    break;
+                }
+                case 'voice-peer-joined': {
+                    const peerId = msg.clientId;
+                    if(peerId===voice.clientId) break;
+                    vLog('[room] peer-joined', peerId);
+                    setCallStatus('相手が入室：接続待ち');
+                    // 老側：PC 作って offer を待つ
+                    if(!voice.pc){
+                        await createPC(peerId);
+                    }
+                    break;
+                }
+                case 'voice-peer-left': {
+                    vLog('[room] peer-left', msg.clientId);
+                    setCallStatus('相手が退出しました');
+                    // keep myself in room; just reset pc
+                    if(voice.pc){ try{ voice.pc.close(); }catch{} voice.pc=null; }
+                    resetPeersUI();
+                    break;
+                }
+                case 'offer': {
+                    const { from, sdp } = msg;
+                    if(!voice.pc) await createPC(from);
+                    await voice.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+                    voice.remoteSet = true;
+                    const answer = await voice.pc.createAnswer();
+                    await voice.pc.setLocalDescription(answer);
+                    voiceSend({ type:'answer', to: from, sdp: voice.pc.localDescription });
+                    // flush
+                    for(const c of voice.pendingCandidates){
+                        try{ await voice.pc.addIceCandidate(c); }catch(e){ vLog('flush cand fail', e.message); }
+                    }
+                    voice.pendingCandidates = [];
+                    setCallStatus('通話中');
+                    break;
+                }
+                case 'answer': {
+                    const { from, sdp } = msg;
+                    if(!voice.pc) break;
+                    await voice.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+                    voice.remoteSet = true;
+                    for(const c of voice.pendingCandidates){
+                        try{ await voice.pc.addIceCandidate(c); }catch(e){ vLog('flush cand fail', e.message); }
+                    }
+                    voice.pendingCandidates = [];
+                    setCallStatus('通話中');
+                    vLog('[webrtc] answer set from', from);
+                    break;
+                }
+                case 'ice-candidate': {
+                    const { from, candidate } = msg;
+                    if(!voice.pc || !candidate) break;
+                    if(!voice.remoteSet){
+                        voice.pendingCandidates.push(candidate);
+                    }else{
+                        try{ await voice.pc.addIceCandidate(candidate); }catch(e){ vLog('[webrtc] addIceCandidate fail', e.message); }
+                    }
+                    break;
+                }
+                default: break;
+            }
+        }
+
+        function cleanupVoice(reason=''){
+            vLog('[cleanup]', reason);
+            if(voice.pc){ try{ voice.pc.close(); }catch{} }
+            voice.pc = null;
+            voice.peerId = null;
+            voice.remoteSet = false;
+            voice.pendingCandidates = [];
+            if(voice.ws){ try{ voice.ws.close(); }catch{} }
+            voice.ws = null;
+            voice.joined = false;
+            callUI.joinBtn.disabled = false;
+            callUI.leaveBtn.disabled = true;
+            callUI.muteBtn.disabled = true;
+            voice.muted = false;
+            callUI.muteBtn.textContent = 'ミュート';
+            resetPeersUI();
+            if(voice.localStream){ try{ voice.localStream.getTracks().forEach(t=>t.stop()); }catch{} }
+            voice.localStream = null;
+            callUI.selfAudio.srcObject = null;
+        }
+
+        // buttons
+        callUI.joinBtn.onclick = async ()=>{
+            callUI.log.textContent = '';
+            resetPeersUI();
+            if(!currentRoomId){ alert('ルームIDがありません（デモ）'); return; }
+            voice.roomId = currentRoomId;
+            callUI.room.textContent = currentRoomId;
+            setCallStatus('準備中…');
+            await ensureVoiceLocalStream();
+            await connectVoiceWS();
+            voiceSend({ type:'voice-join', roomId: voice.roomId });
+        };
+        callUI.leaveBtn.onclick = ()=>{
+            try{ if(voice.ws && voice.ws.readyState===WebSocket.OPEN) voiceSend({ type:'voice-leave', roomId: voice.roomId }); }catch{}
+            cleanupVoice('leave');
+            setCallStatus('未接続');
+        };
+        callUI.muteBtn.onclick = ()=>{
+            if(!voice.localStream){ alert('聴くのみモードではミュートできません'); return; }
+            voice.muted = !voice.muted;
+            voice.localStream.getAudioTracks().forEach(t=> t.enabled = !voice.muted);
+            callUI.muteBtn.textContent = voice.muted ? 'ミュート解除' : 'ミュート';
+        };
+
+        // expose for onclick
+        window.openCallModal = openCallModal;
+        window.closeCallModal = closeCallModal;
+        // auto-join if URL has ?room=
+        (function(){
+            try{
+                const rid = new URLSearchParams(location.search).get('room');
+                if(rid){
+                    switchRoom(rid);
+                    navigateTo('page-chat');
+                }
+            }catch(e){}
+        })();
+</script>
+</body>
+</html>
