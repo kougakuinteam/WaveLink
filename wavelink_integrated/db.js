@@ -79,20 +79,44 @@ async function updateUserRoom(mail, roomUrl){
 }
 
 async function updateUserProfile(oldMail, newMail, name, passwordHash){
-  const fields = ['mail = ?', 'name = ?'];
-  const params = [newMail, name];
-  if(passwordHash){
-    fields.push('password_hash = ?');
-    params.push(passwordHash);
+  const conn = await pool.getConnection();
+  try{
+    await conn.beginTransaction();
+
+    const fields = ['mail = ?', 'name = ?'];
+    const params = [newMail, name];
+    if(passwordHash){
+      fields.push('password_hash = ?');
+      params.push(passwordHash);
+    }
+    params.push(oldMail);
+
+    const sql = `
+      UPDATE wl_Users
+      SET ${fields.join(', ')}
+      WHERE mail = ?
+    `;
+    const [result] = await conn.execute(sql, params);
+
+    // If mail changed, keep message ownership consistent.
+    if(oldMail !== newMail){
+      const msgSql = `
+        UPDATE wl_Messages
+        SET sender_mail = ?
+        WHERE sender_mail = ?
+      `;
+      await conn.execute(msgSql, [newMail, oldMail]);
+    }
+
+    await conn.commit();
+    // Treat "no changes" as success because the row exists.
+    return (result?.affectedRows ?? 0) >= 0;
+  }catch(e){
+    try{ await conn.rollback(); }catch(_e){}
+    throw e;
+  }finally{
+    conn.release();
   }
-  params.push(oldMail);
-  const sql = `
-    UPDATE wl_Users
-    SET ${fields.join(', ')}
-    WHERE mail = ?
-  `;
-  const rows = await execute(sql, params);
-  return rows?.affectedRows || 0;
 }
 
 module.exports = {
